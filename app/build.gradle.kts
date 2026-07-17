@@ -1,7 +1,6 @@
 plugins {
   alias(libs.plugins.android.application)
   alias(libs.plugins.compose.compiler)
-  alias(libs.plugins.kotlin.serialization)
 }
 
 android {
@@ -82,7 +81,6 @@ dependencies {
 
   // Arch Components
   implementation(libs.androidx.lifecycle.runtime.compose)
-  implementation(libs.androidx.lifecycle.viewmodel.compose)
 
   // Compose
   implementation(libs.androidx.compose.ui)
@@ -103,19 +101,5 @@ dependencies {
   androidTestImplementation(libs.androidx.test.ext.junit)
   androidTestImplementation(libs.androidx.test.runner)
   androidTestImplementation(libs.androidx.test.espresso.core)
-
-  // Navigation
-  implementation(libs.androidx.navigation3.ui)
-  implementation(libs.androidx.navigation3.runtime)
-  implementation(libs.androidx.lifecycle.viewmodel.navigation3)
-
-  //View Model Type Safety 
-  implementation("androidx.lifecycle:lifecycle-viewmodel-ktx:2.9.0")
-implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.9.0")  // Compose ke liye
-
-  //Navigation 
-  implementation("androidx.navigation:navigation-compose:2.9.8")
-
-  implementation("androidx.datastore:datastore-preferences:1.1.7")
 
 }
