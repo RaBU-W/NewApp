@@ -196,6 +196,6 @@ private fun dnsLockDescription(
     isApplyingPrivateDnsBlock -> "DNS policy apply ho rahi hai, please wait..."
     !canControlPrivateDns -> "Ye DNS block feature sirf Android 16 users ke liye hai."
     !isDeviceOwner -> "Toggle tabhi enable hoga jab ye app Device Owner hoga."
-    isPrivateDnsBlocked -> "DNS configuration blocked hai. Jo DNS/Private DNS abhi set hai wahi rahega; user Settings se usse change nahi kar payega jab tak toggle off na ho."
-    else -> "Toggle on karne par app current DNS/Private DNS ko same rakhkar Settings se DNS changes block karega."
+    isPrivateDnsBlocked -> "DNS configuration blocked hai. Current DNS wahi rahega; OriginOS fallback ke liye network settings bhi lock hain jab tak toggle off na ho."
+    else -> "Toggle on karne par app DNS/Private DNS changes block karega; OriginOS me DNS page khula rahe to network settings fallback bhi lock hoga."
 }

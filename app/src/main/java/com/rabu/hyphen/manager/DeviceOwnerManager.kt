@@ -23,20 +23,22 @@ class DeviceOwnerManager(private val context: Context) {
     fun canBlockPrivateDnsConfig(): Boolean = Build.VERSION.SDK_INT >= ANDROID_16_API_LEVEL
 
     fun isPrivateDnsConfigBlocked(): Boolean =
-        canBlockPrivateDnsConfig() && (isPrivateDnsBlockedGlobally() || isPrivateDnsBlockedLocally())
+        canBlockPrivateDnsConfig() && DNS_BLOCK_RESTRICTIONS.any { restriction ->
+            hasRestrictionGlobally(restriction) || hasRestrictionLocally(restriction)
+        }
 
-    private fun isPrivateDnsBlockedGlobally(): Boolean =
+    private fun hasRestrictionGlobally(restriction: String): Boolean =
         runCatching {
             devicePolicyManager
                 .getUserRestrictionsGlobally()
-                .getBoolean(UserManager.DISALLOW_CONFIG_PRIVATE_DNS, false)
+                .getBoolean(restriction, false)
         }.getOrDefault(false)
 
-    private fun isPrivateDnsBlockedLocally(): Boolean =
+    private fun hasRestrictionLocally(restriction: String): Boolean =
         runCatching {
             devicePolicyManager
                 .getUserRestrictions(adminComponent)
-                .getBoolean(UserManager.DISALLOW_CONFIG_PRIVATE_DNS, false)
+                .getBoolean(restriction, false)
         }.getOrDefault(false)
 
     fun setPrivateDnsConfigBlocked(blocked: Boolean): PrivateDnsBlockResult {
@@ -46,9 +48,13 @@ class DeviceOwnerManager(private val context: Context) {
 
         return runCatching {
             if (blocked) {
-                devicePolicyManager.addUserRestriction(adminComponent, UserManager.DISALLOW_CONFIG_PRIVATE_DNS)
+                DNS_BLOCK_RESTRICTIONS.forEach { restriction ->
+                    devicePolicyManager.addUserRestriction(adminComponent, restriction)
+                }
             } else {
-                devicePolicyManager.clearUserRestriction(adminComponent, UserManager.DISALLOW_CONFIG_PRIVATE_DNS)
+                DNS_BLOCK_RESTRICTIONS.forEach { restriction ->
+                    devicePolicyManager.clearUserRestriction(adminComponent, restriction)
+                }
             }
             PrivateDnsBlockResult.Success
         }.getOrElse { throwable ->
@@ -65,5 +71,10 @@ class DeviceOwnerManager(private val context: Context) {
         const val OWNDROID_PACKAGE = "com.bintianqi.owndroid"
         const val OWNDROID_RECEIVER = "com.bintianqi.owndroid.Receiver"
         private const val ANDROID_16_API_LEVEL = 36
+        private val DNS_BLOCK_RESTRICTIONS = listOf(
+            UserManager.DISALLOW_CONFIG_PRIVATE_DNS,
+            UserManager.DISALLOW_CONFIG_WIFI,
+            UserManager.DISALLOW_CONFIG_MOBILE_NETWORKS,
+        )
     }
 }
