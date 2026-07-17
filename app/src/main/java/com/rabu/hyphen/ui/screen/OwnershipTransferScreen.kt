@@ -7,11 +7,14 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -38,11 +41,13 @@ fun OwnershipTransferScreen(onStartCountdown: (Long) -> Unit) {
     var isDeviceOwner by remember { mutableStateOf(manager.isDeviceOwner()) }
     var statusMessage by remember { mutableStateOf(ownerStatusText(isDeviceOwner)) }
     var countdownSecondsText by remember { mutableStateOf("60") }
+    var isPrivateDnsDisabled by remember { mutableStateOf(manager.isPrivateDnsConfigDisabled()) }
     val countdownSeconds = countdownSecondsText.toLongOrNull()
     val isCountdownValid = countdownSeconds != null && countdownSeconds in TimerStateManager.MIN_DURATION_SECONDS..TimerStateManager.MAX_DURATION_SECONDS
 
     fun refreshOwnerState() {
         isDeviceOwner = manager.isDeviceOwner()
+        isPrivateDnsDisabled = manager.isPrivateDnsConfigDisabled()
         statusMessage = ownerStatusText(isDeviceOwner)
     }
 
@@ -60,6 +65,7 @@ fun OwnershipTransferScreen(onStartCountdown: (Long) -> Unit) {
         Column(
             modifier = Modifier
                 .fillMaxSize()
+                .verticalScroll(rememberScrollState())
                 .padding(24.dp),
             verticalArrangement = Arrangement.Center,
             horizontalAlignment = Alignment.CenterHorizontally,
@@ -88,6 +94,33 @@ fun OwnershipTransferScreen(onStartCountdown: (Long) -> Unit) {
             Spacer(modifier = Modifier.height(16.dp))
             Text(
                 text = "Button tabhi enable hoga jab ye app Device Owner hoga. Tap karte hi ownership Owndroid receiver ko wapas transfer hogi.",
+                style = MaterialTheme.typography.bodyMedium,
+            )
+
+            Spacer(modifier = Modifier.height(24.dp))
+            HorizontalDivider()
+            Spacer(modifier = Modifier.height(24.dp))
+            Text(
+                text = "DNS configuration lock",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+            Switch(
+                checked = isPrivateDnsDisabled,
+                enabled = isDeviceOwner && manager.canControlPrivateDns(),
+                onCheckedChange = { disabled ->
+                    manager.setPrivateDnsConfigDisabled(disabled)
+                    isPrivateDnsDisabled = manager.isPrivateDnsConfigDisabled()
+                },
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+            Text(
+                text = dnsLockDescription(
+                    isDeviceOwner = isDeviceOwner,
+                    canControlPrivateDns = manager.canControlPrivateDns(),
+                    isPrivateDnsDisabled = isPrivateDnsDisabled,
+                ),
                 style = MaterialTheme.typography.bodyMedium,
             )
             Spacer(modifier = Modifier.height(24.dp))
@@ -130,3 +163,15 @@ private fun ownerStatusText(isDeviceOwner: Boolean): String =
     } else {
         "Abhi ye app Device Owner nahi hai. Pehle Owndroid se ownership is app ko transfer karo."
     }
+
+
+private fun dnsLockDescription(
+    isDeviceOwner: Boolean,
+    canControlPrivateDns: Boolean,
+    isPrivateDnsDisabled: Boolean,
+): String = when {
+    !canControlPrivateDns -> "Private DNS lock Android 9 (Pie) aur uske baad available hai."
+    !isDeviceOwner -> "Toggle tabhi enable hoga jab ye app Device Owner hoga."
+    isPrivateDnsDisabled -> "DNS configuration disabled hai. User Settings se Private DNS tab tak change nahi kar sakta jab tak toggle off na ho."
+    else -> "Toggle on karne par user Settings se Private DNS change nahi kar payega."
+}
