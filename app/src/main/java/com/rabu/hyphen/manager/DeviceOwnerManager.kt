@@ -26,7 +26,7 @@ class DeviceOwnerManager(private val context: Context) {
     fun isPrivateDnsConfigBlocked(): Boolean =
         canBlockPrivateDnsConfig() &&
             devicePolicyManager
-                .getUserRestrictions(adminComponent)
+                .getUserRestrictionsGlobally()
                 .getBoolean(UserManager.DISALLOW_CONFIG_PRIVATE_DNS, false)
 
     fun setPrivateDnsConfigBlocked(blocked: Boolean) {
@@ -34,7 +34,7 @@ class DeviceOwnerManager(private val context: Context) {
 
         if (blocked) {
             keepCurrentPrivateDnsModeManaged()
-            devicePolicyManager.addUserRestriction(adminComponent, UserManager.DISALLOW_CONFIG_PRIVATE_DNS)
+            devicePolicyManager.addUserRestrictionGlobally(UserManager.DISALLOW_CONFIG_PRIVATE_DNS)
         } else {
             devicePolicyManager.clearUserRestriction(adminComponent, UserManager.DISALLOW_CONFIG_PRIVATE_DNS)
         }
