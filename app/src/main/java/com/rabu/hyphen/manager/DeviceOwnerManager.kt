@@ -25,18 +25,27 @@ class DeviceOwnerManager(private val context: Context) {
 
     fun isPrivateDnsConfigBlocked(): Boolean =
         canBlockPrivateDnsConfig() &&
-            devicePolicyManager
-                .getUserRestrictionsGlobally()
-                .getBoolean(UserManager.DISALLOW_CONFIG_PRIVATE_DNS, false)
+            runCatching {
+                devicePolicyManager
+                    .getUserRestrictionsGlobally()
+                    .getBoolean(UserManager.DISALLOW_CONFIG_PRIVATE_DNS, false)
+            }.getOrDefault(false)
 
-    fun setPrivateDnsConfigBlocked(blocked: Boolean) {
-        if (!canBlockPrivateDnsConfig()) return
+    fun setPrivateDnsConfigBlocked(blocked: Boolean): PrivateDnsBlockResult {
+        if (!canBlockPrivateDnsConfig()) {
+            return PrivateDnsBlockResult.Error("Ye DNS block feature sirf Android 16 users ke liye hai.")
+        }
 
-        if (blocked) {
-            keepCurrentPrivateDnsModeManaged()
-            devicePolicyManager.addUserRestrictionGlobally(UserManager.DISALLOW_CONFIG_PRIVATE_DNS)
-        } else {
-            devicePolicyManager.clearUserRestriction(adminComponent, UserManager.DISALLOW_CONFIG_PRIVATE_DNS)
+        return runCatching {
+            if (blocked) {
+                keepCurrentPrivateDnsModeManaged()
+                devicePolicyManager.addUserRestrictionGlobally(UserManager.DISALLOW_CONFIG_PRIVATE_DNS)
+            } else {
+                devicePolicyManager.clearUserRestriction(adminComponent, UserManager.DISALLOW_CONFIG_PRIVATE_DNS)
+            }
+            PrivateDnsBlockResult.Success
+        }.getOrElse { throwable ->
+            PrivateDnsBlockResult.Error(throwable.message ?: "DNS policy apply nahi ho payi.")
         }
     }
 
@@ -47,6 +56,11 @@ class DeviceOwnerManager(private val context: Context) {
         if (privateDnsMode == PRIVATE_DNS_MODE_HOSTNAME && !privateDnsHost.isNullOrBlank()) {
             devicePolicyManager.setGlobalPrivateDnsModeSpecifiedHost(adminComponent, privateDnsHost)
         }
+    }
+
+    sealed interface PrivateDnsBlockResult {
+        data object Success : PrivateDnsBlockResult
+        data class Error(val message: String) : PrivateDnsBlockResult
     }
 
     companion object {

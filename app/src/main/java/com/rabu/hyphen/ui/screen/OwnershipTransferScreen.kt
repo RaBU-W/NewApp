@@ -21,6 +21,7 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -31,17 +32,24 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import com.rabu.hyphen.manager.DeviceOwnerManager
+import com.rabu.hyphen.manager.DeviceOwnerManager.PrivateDnsBlockResult
 import com.rabu.hyphen.manager.TimerStateManager
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 @Composable
 fun OwnershipTransferScreen(onStartCountdown: (Long) -> Unit) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
     val manager = remember(context) { DeviceOwnerManager(context.applicationContext) }
+    val coroutineScope = rememberCoroutineScope()
     var isDeviceOwner by remember { mutableStateOf(manager.isDeviceOwner()) }
     var statusMessage by remember { mutableStateOf(ownerStatusText(isDeviceOwner)) }
     var countdownSecondsText by remember { mutableStateOf("60") }
     var isPrivateDnsBlocked by remember { mutableStateOf(manager.isPrivateDnsConfigBlocked()) }
+    var isApplyingPrivateDnsBlock by remember { mutableStateOf(false) }
+    var privateDnsErrorMessage by remember { mutableStateOf<String?>(null) }
     val countdownSeconds = countdownSecondsText.toLongOrNull()
     val isCountdownValid = countdownSeconds != null && countdownSeconds in TimerStateManager.MIN_DURATION_SECONDS..TimerStateManager.MAX_DURATION_SECONDS
 
@@ -108,10 +116,20 @@ fun OwnershipTransferScreen(onStartCountdown: (Long) -> Unit) {
             Spacer(modifier = Modifier.height(8.dp))
             Switch(
                 checked = isPrivateDnsBlocked,
-                enabled = isDeviceOwner && manager.canBlockPrivateDnsConfig(),
+                enabled = isDeviceOwner && manager.canBlockPrivateDnsConfig() && !isApplyingPrivateDnsBlock,
                 onCheckedChange = { blocked ->
-                    manager.setPrivateDnsConfigBlocked(blocked)
-                    isPrivateDnsBlocked = manager.isPrivateDnsConfigBlocked()
+                    privateDnsErrorMessage = null
+                    isApplyingPrivateDnsBlock = true
+                    coroutineScope.launch {
+                        val result = withContext(Dispatchers.IO) {
+                            manager.setPrivateDnsConfigBlocked(blocked)
+                        }
+                        isPrivateDnsBlocked = manager.isPrivateDnsConfigBlocked()
+                        isApplyingPrivateDnsBlock = false
+                        if (result is PrivateDnsBlockResult.Error) {
+                            privateDnsErrorMessage = result.message
+                        }
+                    }
                 },
             )
             Spacer(modifier = Modifier.height(8.dp))
@@ -120,6 +138,8 @@ fun OwnershipTransferScreen(onStartCountdown: (Long) -> Unit) {
                     isDeviceOwner = isDeviceOwner,
                     canControlPrivateDns = manager.canBlockPrivateDnsConfig(),
                     isPrivateDnsBlocked = isPrivateDnsBlocked,
+                    isApplyingPrivateDnsBlock = isApplyingPrivateDnsBlock,
+                    errorMessage = privateDnsErrorMessage,
                 ),
                 style = MaterialTheme.typography.bodyMedium,
             )
@@ -169,7 +189,11 @@ private fun dnsLockDescription(
     isDeviceOwner: Boolean,
     canControlPrivateDns: Boolean,
     isPrivateDnsBlocked: Boolean,
+    isApplyingPrivateDnsBlock: Boolean,
+    errorMessage: String?,
 ): String = when {
+    errorMessage != null -> "DNS policy apply nahi hui: $errorMessage"
+    isApplyingPrivateDnsBlock -> "DNS policy apply ho rahi hai, please wait..."
     !canControlPrivateDns -> "Ye DNS block feature sirf Android 16 users ke liye hai."
     !isDeviceOwner -> "Toggle tabhi enable hoga jab ye app Device Owner hoga."
     isPrivateDnsBlocked -> "DNS configuration blocked hai. Jo DNS/Private DNS abhi set hai wahi rahega; user Settings se usse change nahi kar payega jab tak toggle off na ho."
