@@ -6,6 +6,7 @@ import android.content.Context
 import android.os.Build
 import android.os.PersistableBundle
 import android.os.UserManager
+import android.provider.Settings
 import com.rabu.hyphen.admin.MyDeviceAdminReceiver
 
 class DeviceOwnerManager(private val context: Context) {
@@ -20,26 +21,40 @@ class DeviceOwnerManager(private val context: Context) {
         devicePolicyManager.transferOwnership(adminComponent, owndroidComponent, PersistableBundle())
     }
 
-    fun canControlPrivateDns(): Boolean = Build.VERSION.SDK_INT >= Build.VERSION_CODES.P
+    fun canBlockPrivateDnsConfig(): Boolean = Build.VERSION.SDK_INT >= ANDROID_16_API_LEVEL
 
-    fun isPrivateDnsConfigDisabled(): Boolean =
-        canControlPrivateDns() &&
+    fun isPrivateDnsConfigBlocked(): Boolean =
+        canBlockPrivateDnsConfig() &&
             devicePolicyManager
                 .getUserRestrictions(adminComponent)
                 .getBoolean(UserManager.DISALLOW_CONFIG_PRIVATE_DNS, false)
 
-    fun setPrivateDnsConfigDisabled(disabled: Boolean) {
-        if (!canControlPrivateDns()) return
+    fun setPrivateDnsConfigBlocked(blocked: Boolean) {
+        if (!canBlockPrivateDnsConfig()) return
 
-        if (disabled) {
+        if (blocked) {
+            keepCurrentPrivateDnsModeManaged()
             devicePolicyManager.addUserRestriction(adminComponent, UserManager.DISALLOW_CONFIG_PRIVATE_DNS)
         } else {
             devicePolicyManager.clearUserRestriction(adminComponent, UserManager.DISALLOW_CONFIG_PRIVATE_DNS)
         }
     }
 
+    private fun keepCurrentPrivateDnsModeManaged() {
+        val privateDnsMode = Settings.Global.getString(context.contentResolver, PRIVATE_DNS_MODE_SETTING)
+        val privateDnsHost = Settings.Global.getString(context.contentResolver, PRIVATE_DNS_SPECIFIER_SETTING)
+
+        if (privateDnsMode == PRIVATE_DNS_MODE_HOSTNAME && !privateDnsHost.isNullOrBlank()) {
+            devicePolicyManager.setGlobalPrivateDnsModeSpecifiedHost(adminComponent, privateDnsHost)
+        }
+    }
+
     companion object {
         const val OWNDROID_PACKAGE = "com.bintianqi.owndroid"
         const val OWNDROID_RECEIVER = "com.bintianqi.owndroid.Receiver"
+        private const val ANDROID_16_API_LEVEL = 36
+        private const val PRIVATE_DNS_MODE_SETTING = "private_dns_mode"
+        private const val PRIVATE_DNS_SPECIFIER_SETTING = "private_dns_specifier"
+        private const val PRIVATE_DNS_MODE_HOSTNAME = "hostname"
     }
 }

@@ -41,13 +41,13 @@ fun OwnershipTransferScreen(onStartCountdown: (Long) -> Unit) {
     var isDeviceOwner by remember { mutableStateOf(manager.isDeviceOwner()) }
     var statusMessage by remember { mutableStateOf(ownerStatusText(isDeviceOwner)) }
     var countdownSecondsText by remember { mutableStateOf("60") }
-    var isPrivateDnsDisabled by remember { mutableStateOf(manager.isPrivateDnsConfigDisabled()) }
+    var isPrivateDnsBlocked by remember { mutableStateOf(manager.isPrivateDnsConfigBlocked()) }
     val countdownSeconds = countdownSecondsText.toLongOrNull()
     val isCountdownValid = countdownSeconds != null && countdownSeconds in TimerStateManager.MIN_DURATION_SECONDS..TimerStateManager.MAX_DURATION_SECONDS
 
     fun refreshOwnerState() {
         isDeviceOwner = manager.isDeviceOwner()
-        isPrivateDnsDisabled = manager.isPrivateDnsConfigDisabled()
+        isPrivateDnsBlocked = manager.isPrivateDnsConfigBlocked()
         statusMessage = ownerStatusText(isDeviceOwner)
     }
 
@@ -107,19 +107,19 @@ fun OwnershipTransferScreen(onStartCountdown: (Long) -> Unit) {
             )
             Spacer(modifier = Modifier.height(8.dp))
             Switch(
-                checked = isPrivateDnsDisabled,
-                enabled = isDeviceOwner && manager.canControlPrivateDns(),
-                onCheckedChange = { disabled ->
-                    manager.setPrivateDnsConfigDisabled(disabled)
-                    isPrivateDnsDisabled = manager.isPrivateDnsConfigDisabled()
+                checked = isPrivateDnsBlocked,
+                enabled = isDeviceOwner && manager.canBlockPrivateDnsConfig(),
+                onCheckedChange = { blocked ->
+                    manager.setPrivateDnsConfigBlocked(blocked)
+                    isPrivateDnsBlocked = manager.isPrivateDnsConfigBlocked()
                 },
             )
             Spacer(modifier = Modifier.height(8.dp))
             Text(
                 text = dnsLockDescription(
                     isDeviceOwner = isDeviceOwner,
-                    canControlPrivateDns = manager.canControlPrivateDns(),
-                    isPrivateDnsDisabled = isPrivateDnsDisabled,
+                    canControlPrivateDns = manager.canBlockPrivateDnsConfig(),
+                    isPrivateDnsBlocked = isPrivateDnsBlocked,
                 ),
                 style = MaterialTheme.typography.bodyMedium,
             )
@@ -168,10 +168,10 @@ private fun ownerStatusText(isDeviceOwner: Boolean): String =
 private fun dnsLockDescription(
     isDeviceOwner: Boolean,
     canControlPrivateDns: Boolean,
-    isPrivateDnsDisabled: Boolean,
+    isPrivateDnsBlocked: Boolean,
 ): String = when {
-    !canControlPrivateDns -> "Private DNS lock Android 9 (Pie) aur uske baad available hai."
+    !canControlPrivateDns -> "Ye DNS block feature sirf Android 16 users ke liye hai."
     !isDeviceOwner -> "Toggle tabhi enable hoga jab ye app Device Owner hoga."
-    isPrivateDnsDisabled -> "DNS configuration disabled hai. User Settings se Private DNS tab tak change nahi kar sakta jab tak toggle off na ho."
-    else -> "Toggle on karne par user Settings se Private DNS change nahi kar payega."
+    isPrivateDnsBlocked -> "DNS configuration blocked hai. Jo DNS/Private DNS abhi set hai wahi rahega; user Settings se usse change nahi kar payega jab tak toggle off na ho."
+    else -> "Toggle on karne par app current DNS/Private DNS ko same rakhkar Settings se DNS changes block karega."
 }
