@@ -7,17 +7,21 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -28,21 +32,30 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import com.rabu.hyphen.manager.DeviceOwnerManager
+import com.rabu.hyphen.manager.DeviceOwnerManager.PrivateDnsBlockResult
 import com.rabu.hyphen.manager.TimerStateManager
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 @Composable
 fun OwnershipTransferScreen(onStartCountdown: (Long) -> Unit) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
     val manager = remember(context) { DeviceOwnerManager(context.applicationContext) }
+    val coroutineScope = rememberCoroutineScope()
     var isDeviceOwner by remember { mutableStateOf(manager.isDeviceOwner()) }
     var statusMessage by remember { mutableStateOf(ownerStatusText(isDeviceOwner)) }
     var countdownSecondsText by remember { mutableStateOf("60") }
+    var isPrivateDnsBlocked by remember { mutableStateOf(manager.isPrivateDnsConfigBlocked()) }
+    var isApplyingPrivateDnsBlock by remember { mutableStateOf(false) }
+    var privateDnsErrorMessage by remember { mutableStateOf<String?>(null) }
     val countdownSeconds = countdownSecondsText.toLongOrNull()
     val isCountdownValid = countdownSeconds != null && countdownSeconds in TimerStateManager.MIN_DURATION_SECONDS..TimerStateManager.MAX_DURATION_SECONDS
 
     fun refreshOwnerState() {
         isDeviceOwner = manager.isDeviceOwner()
+        isPrivateDnsBlocked = manager.isPrivateDnsConfigBlocked()
         statusMessage = ownerStatusText(isDeviceOwner)
     }
 
@@ -60,6 +73,7 @@ fun OwnershipTransferScreen(onStartCountdown: (Long) -> Unit) {
         Column(
             modifier = Modifier
                 .fillMaxSize()
+                .verticalScroll(rememberScrollState())
                 .padding(24.dp),
             verticalArrangement = Arrangement.Center,
             horizontalAlignment = Alignment.CenterHorizontally,
@@ -88,6 +102,45 @@ fun OwnershipTransferScreen(onStartCountdown: (Long) -> Unit) {
             Spacer(modifier = Modifier.height(16.dp))
             Text(
                 text = "Button tabhi enable hoga jab ye app Device Owner hoga. Tap karte hi ownership Owndroid receiver ko wapas transfer hogi.",
+                style = MaterialTheme.typography.bodyMedium,
+            )
+
+            Spacer(modifier = Modifier.height(24.dp))
+            HorizontalDivider()
+            Spacer(modifier = Modifier.height(24.dp))
+            Text(
+                text = "DNS configuration lock",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+            Switch(
+                checked = isPrivateDnsBlocked,
+                enabled = isDeviceOwner && manager.canBlockPrivateDnsConfig() && !isApplyingPrivateDnsBlock,
+                onCheckedChange = { blocked ->
+                    privateDnsErrorMessage = null
+                    isApplyingPrivateDnsBlock = true
+                    coroutineScope.launch {
+                        val result = withContext(Dispatchers.IO) {
+                            manager.setPrivateDnsConfigBlocked(blocked)
+                        }
+                        isPrivateDnsBlocked = manager.isPrivateDnsConfigBlocked()
+                        isApplyingPrivateDnsBlock = false
+                        if (result is PrivateDnsBlockResult.Error) {
+                            privateDnsErrorMessage = result.message
+                        }
+                    }
+                },
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+            Text(
+                text = dnsLockDescription(
+                    isDeviceOwner = isDeviceOwner,
+                    canControlPrivateDns = manager.canBlockPrivateDnsConfig(),
+                    isPrivateDnsBlocked = isPrivateDnsBlocked,
+                    isApplyingPrivateDnsBlock = isApplyingPrivateDnsBlock,
+                    errorMessage = privateDnsErrorMessage,
+                ),
                 style = MaterialTheme.typography.bodyMedium,
             )
             Spacer(modifier = Modifier.height(24.dp))
@@ -130,3 +183,19 @@ private fun ownerStatusText(isDeviceOwner: Boolean): String =
     } else {
         "Abhi ye app Device Owner nahi hai. Pehle Owndroid se ownership is app ko transfer karo."
     }
+
+
+private fun dnsLockDescription(
+    isDeviceOwner: Boolean,
+    canControlPrivateDns: Boolean,
+    isPrivateDnsBlocked: Boolean,
+    isApplyingPrivateDnsBlock: Boolean,
+    errorMessage: String?,
+): String = when {
+    errorMessage != null -> "DNS policy apply nahi hui: $errorMessage"
+    isApplyingPrivateDnsBlock -> "DNS policy apply ho rahi hai, please wait..."
+    !canControlPrivateDns -> "Ye DNS block feature sirf Android 16 users ke liye hai."
+    !isDeviceOwner -> "Toggle tabhi enable hoga jab ye app Device Owner hoga."
+    isPrivateDnsBlocked -> "DNS configuration blocked hai. Current DNS wahi rahega; OriginOS fallback ke liye network settings bhi lock hain jab tak toggle off na ho."
+    else -> "Toggle on karne par app DNS/Private DNS changes block karega; OriginOS me DNS page khula rahe to network settings fallback bhi lock hoga."
+}
