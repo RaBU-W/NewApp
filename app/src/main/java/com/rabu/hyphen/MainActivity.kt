@@ -13,8 +13,8 @@ class MainActivity : ComponentActivity() {
 
         setContent {
             HyphenTheme {
-                TimerGateScreen {
-                    OwnershipTransferScreen()
+                TimerGateScreen { startCountdown ->
+                    OwnershipTransferScreen(onStartCountdown = startCountdown)
                 }
             }
         }
