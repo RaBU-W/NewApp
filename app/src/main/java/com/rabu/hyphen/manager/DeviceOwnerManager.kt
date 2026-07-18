@@ -5,6 +5,7 @@ import android.content.ComponentName
 import android.content.Context
 import android.os.Build
 import android.os.PersistableBundle
+import android.util.Log
 import androidx.annotation.RequiresApi
 import com.rabu.hyphen.admin.MyDeviceAdminReceiver
 import com.rabu.hyphen.service.PrivateDnsEnforcerService
@@ -14,6 +15,12 @@ class DeviceOwnerManager(private val context: Context) {
     private val preferences = context.getSharedPreferences(PREFERENCES_NAME, Context.MODE_PRIVATE)
 
     private val adminComponent = ComponentName(context, MyDeviceAdminReceiver::class.java)
+    private val actualDeviceOwnerComponent: ComponentName?
+        get() = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            devicePolicyManager.getDeviceOwnerComponentOnAnyUser()
+        } else {
+            adminComponent
+        }
     private val owndroidComponent = ComponentName(OWNDROID_PACKAGE, OWNDROID_RECEIVER)
 
     fun isDeviceOwner(): Boolean = devicePolicyManager.isDeviceOwnerApp(context.packageName)
@@ -59,6 +66,7 @@ class DeviceOwnerManager(private val context: Context) {
         }
 
         return runCatching {
+            logDeviceOwnerComponents()
             applyPrivateDnsWithDevicePolicyService(
                 mode = DevicePolicyManager.PRIVATE_DNS_MODE_PROVIDER_HOSTNAME,
                 host = REQUIRED_PRIVATE_DNS_HOST,
@@ -71,46 +79,33 @@ class DeviceOwnerManager(private val context: Context) {
 
     @RequiresApi(Build.VERSION_CODES.Q)
     private fun applyPrivateDnsWithDevicePolicyService(mode: Int, host: String?) {
+        val ownerComponent = actualDeviceOwnerComponent
+            ?: error("Actual Device Owner component nahi mila")
+
         when (mode) {
             DevicePolicyManager.PRIVATE_DNS_MODE_PROVIDER_HOSTNAME -> {
                 require(!host.isNullOrBlank()) { "Private DNS hostname empty hai" }
-                val result = devicePolicyManager.setGlobalPrivateDnsModeSpecifiedHost(adminComponent, host)
+                val result = devicePolicyManager.setGlobalPrivateDnsModeSpecifiedHost(ownerComponent, host)
                 check(result == DevicePolicyManager.PRIVATE_DNS_SET_NO_ERROR) {
                     "Private DNS rejected. Result code: $result"
                 }
             }
 
             DevicePolicyManager.PRIVATE_DNS_MODE_OPPORTUNISTIC -> {
-                val result = devicePolicyManager.setGlobalPrivateDnsModeOpportunistic(adminComponent)
+                val result = devicePolicyManager.setGlobalPrivateDnsModeOpportunistic(ownerComponent)
                 check(result == DevicePolicyManager.PRIVATE_DNS_SET_NO_ERROR) {
                     "Private DNS rejected. Result code: $result"
                 }
-            }
-
-            DevicePolicyManager.PRIVATE_DNS_MODE_OFF -> {
-                setPrivateDnsUsingDpmService(mode, null)
             }
 
             else -> error("Unsupported Private DNS mode: $mode")
         }
     }
 
-    @Suppress("PrivateApi")
-    private fun setPrivateDnsUsingDpmService(mode: Int, host: String?) {
-        val serviceField = DevicePolicyManager::class.java.getDeclaredField("mService")
-        serviceField.isAccessible = true
-
-        val service = serviceField.get(devicePolicyManager)
-            ?: error("DevicePolicyManager service unavailable")
-
-        val method = service.javaClass.methods.firstOrNull {
-            it.name == "setGlobalPrivateDns" && it.parameterTypes.size == 3
-        } ?: error("setGlobalPrivateDns method nahi mila")
-
-        val result = method.invoke(service, adminComponent, mode, host) as Int
-        check(result == DevicePolicyManager.PRIVATE_DNS_SET_NO_ERROR) {
-            "Private DNS rejected. Result code: $result"
-        }
+    private fun logDeviceOwnerComponents() {
+        Log.d(LOG_TAG, "Package is device owner: ${isDeviceOwner()}")
+        Log.d(LOG_TAG, "Configured admin component: $adminComponent")
+        Log.d(LOG_TAG, "Actual owner component: $actualDeviceOwnerComponent")
     }
 
     sealed interface PrivateDnsEnforcementResult {
@@ -121,8 +116,9 @@ class DeviceOwnerManager(private val context: Context) {
     companion object {
         const val OWNDROID_PACKAGE = "com.bintianqi.owndroid"
         const val OWNDROID_RECEIVER = "com.bintianqi.owndroid.Receiver"
-        const val REQUIRED_PRIVATE_DNS_HOST = "c121f1.dns.nextdns.io"
+        const val REQUIRED_PRIVATE_DNS_HOST = "dns.google"
         private const val PREFERENCES_NAME = "device_owner_policies"
         private const val KEY_PRIVATE_DNS_ENFORCEMENT_ENABLED = "private_dns_enforcement_enabled"
+        private const val LOG_TAG = "PrivateDns"
     }
 }

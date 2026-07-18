@@ -196,6 +196,6 @@ private fun dnsEnforcementDescription(
     isApplyingPrivateDnsEnforcement -> "DNS enforcement start ho raha hai, please wait..."
     !canControlPrivateDns -> "Ye DNS auto-enforce feature sirf Android 10+ users ke liye hai."
     !isDeviceOwner -> "Toggle tabhi enable hoga jab ye app Device Owner hoga."
-    isPrivateDnsEnforcementEnabled -> "App har 5 second me Private DNS check karega. Agar DNS c121f1.dns.nextdns.io nahi hoga to app use wapas set karega."
-    else -> "Toggle on karne par Private DNS c121f1.dns.nextdns.io par set hoga aur har 5 second me dobara check hoga."
+    isPrivateDnsEnforcementEnabled -> "App har 5 second me Private DNS check karega. Agar DNS dns.google nahi hoga to app use wapas set karega."
+    else -> "Toggle on karne par Private DNS dns.google par set hoga aur har 5 second me dobara check hoga."
 }
