@@ -79,20 +79,17 @@ class DeviceOwnerManager(private val context: Context) {
 
     @RequiresApi(Build.VERSION_CODES.Q)
     private fun applyPrivateDnsWithDevicePolicyService(mode: Int, host: String?) {
-        val ownerComponent = actualDeviceOwnerComponent
-            ?: error("Actual Device Owner component nahi mila")
-
         when (mode) {
             DevicePolicyManager.PRIVATE_DNS_MODE_PROVIDER_HOSTNAME -> {
                 require(!host.isNullOrBlank()) { "Private DNS hostname empty hai" }
-                val result = devicePolicyManager.setGlobalPrivateDnsModeSpecifiedHost(ownerComponent, host)
+                val result = devicePolicyManager.setGlobalPrivateDnsModeSpecifiedHost(adminComponent, host)
                 check(result == DevicePolicyManager.PRIVATE_DNS_SET_NO_ERROR) {
                     "Private DNS rejected. Result code: $result"
                 }
             }
 
             DevicePolicyManager.PRIVATE_DNS_MODE_OPPORTUNISTIC -> {
-                val result = devicePolicyManager.setGlobalPrivateDnsModeOpportunistic(ownerComponent)
+                val result = devicePolicyManager.setGlobalPrivateDnsModeOpportunistic(adminComponent)
                 check(result == DevicePolicyManager.PRIVATE_DNS_SET_NO_ERROR) {
                     "Private DNS rejected. Result code: $result"
                 }
@@ -105,7 +102,6 @@ class DeviceOwnerManager(private val context: Context) {
     private fun logDeviceOwnerComponents() {
         Log.d(LOG_TAG, "Package is device owner: ${isDeviceOwner()}")
         Log.d(LOG_TAG, "Configured admin component: $adminComponent")
-        Log.d(LOG_TAG, "Actual owner component: $actualDeviceOwnerComponent")
     }
 
     sealed interface PrivateDnsEnforcementResult {
