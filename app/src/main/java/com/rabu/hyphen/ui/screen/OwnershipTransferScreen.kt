@@ -50,12 +50,14 @@ fun OwnershipTransferScreen(onStartCountdown: (Long) -> Unit) {
     var isPrivateDnsEnforcementEnabled by remember { mutableStateOf(manager.isPrivateDnsEnforcementEnabled()) }
     var isApplyingPrivateDnsEnforcement by remember { mutableStateOf(false) }
     var privateDnsErrorMessage by remember { mutableStateOf<String?>(null) }
+    var privateDnsDiagnosticStatus by remember { mutableStateOf(manager.getLastPrivateDnsStatus()) }
     val countdownSeconds = countdownSecondsText.toLongOrNull()
     val isCountdownValid = countdownSeconds != null && countdownSeconds in TimerStateManager.MIN_DURATION_SECONDS..TimerStateManager.MAX_DURATION_SECONDS
 
     fun refreshOwnerState() {
         isDeviceOwner = manager.isDeviceOwner()
         isPrivateDnsEnforcementEnabled = manager.isPrivateDnsEnforcementEnabled()
+        privateDnsDiagnosticStatus = manager.getLastPrivateDnsStatus()
         statusMessage = ownerStatusText(isDeviceOwner)
     }
 
@@ -119,12 +121,14 @@ fun OwnershipTransferScreen(onStartCountdown: (Long) -> Unit) {
                 enabled = isDeviceOwner && manager.canEnforcePrivateDns() && !isApplyingPrivateDnsEnforcement,
                 onCheckedChange = { enabled ->
                     privateDnsErrorMessage = null
+                    privateDnsDiagnosticStatus = "Checking Device Owner..."
                     isApplyingPrivateDnsEnforcement = true
                     coroutineScope.launch {
                         val result = withContext(Dispatchers.IO) {
                             manager.setPrivateDnsEnforcementEnabled(enabled)
                         }
                         isPrivateDnsEnforcementEnabled = manager.isPrivateDnsEnforcementEnabled()
+                        privateDnsDiagnosticStatus = manager.getLastPrivateDnsStatus()
                         isApplyingPrivateDnsEnforcement = false
                         if (result is PrivateDnsEnforcementResult.Error) {
                             privateDnsErrorMessage = result.message
@@ -142,6 +146,11 @@ fun OwnershipTransferScreen(onStartCountdown: (Long) -> Unit) {
                     errorMessage = privateDnsErrorMessage,
                 ),
                 style = MaterialTheme.typography.bodyMedium,
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+            Text(
+                text = "Diagnostic status:\n$privateDnsDiagnosticStatus",
+                style = MaterialTheme.typography.bodySmall,
             )
             Spacer(modifier = Modifier.height(24.dp))
             HorizontalDivider()
