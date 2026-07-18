@@ -1,7 +1,6 @@
 package com.rabu.hyphen.manager
 
 import android.app.admin.DevicePolicyManager
-import android.app.admin.IDevicePolicyManager
 import android.content.ComponentName
 import android.content.Context
 import android.os.Build
@@ -89,93 +88,67 @@ class DeviceOwnerManager(private val context: Context) {
         return applyPrivateDnsLikeOwnDroid()
     }
 
-    @Suppress("PrivateApi")
     @RequiresApi(Build.VERSION_CODES.Q)
-    private fun applyPrivateDnsLikeOwnDroid():
-        PrivateDnsEnforcementResult {
-    
-        val mode =
-            DevicePolicyManager.PRIVATE_DNS_MODE_PROVIDER_HOSTNAME
-    
+    private fun applyPrivateDnsLikeOwnDroid(): PrivateDnsEnforcementResult {
+
+        val mode = DevicePolicyManager.PRIVATE_DNS_MODE_PROVIDER_HOSTNAME
+
         val host = REQUIRED_PRIVATE_DNS_HOST
         val owner = isDeviceOwner()
         val active = devicePolicyManager.isAdminActive(adminComponent)
-    
+
         return try {
-            lastPrivateDnsStatus.value =
-                "Applying host=$host, component=$adminComponent"
-    
-            val field =
-                findFieldInHierarchy(
-                    devicePolicyManager.javaClass,
-                    "mService"
-                )
-    
-            field.isAccessible = true
-    
-            val service =
-                field.get(devicePolicyManager) as IDevicePolicyManager
-    
+            lastPrivateDnsStatus.value = "Applying host=$host, component=$adminComponent"
+
             val result =
-                service.setGlobalPrivateDns(
-                    adminComponent,
-                    mode,
-                    host
-                )
-    
-            if (result ==
-                DevicePolicyManager.PRIVATE_DNS_SET_NO_ERROR
-            ) {
+                    devicePolicyManager.setGlobalPrivateDnsModeSpecifiedHost(adminComponent, host)
+
+            if (result == DevicePolicyManager.PRIVATE_DNS_SET_NO_ERROR) {
                 setPrivateDnsDiagnosticStatus(
-                    owner = owner,
-                    active = active,
-                    mode = mode,
-                    serviceClass = service.javaClass.name,
-                    dpmResult = result,
-                    finalError = null,
+                        owner = owner,
+                        active = active,
+                        mode = mode,
+                        serviceClass = "Public DevicePolicyManager API",
+                        dpmResult = result,
+                        finalError = null,
                 )
-    
+
                 PrivateDnsEnforcementResult.Success
             } else {
-                val message =
-                    "OwnDroid-style DPM call failed. Result=$result"
-    
+                val message = "Public DevicePolicyManager API failed. Result=$result"
+
                 setPrivateDnsDiagnosticStatus(
+                        owner = owner,
+                        active = active,
+                        mode = mode,
+                        serviceClass = "Public DevicePolicyManager API",
+                        dpmResult = result,
+                        exception = null,
+                        finalError = message,
+                )
+
+                PrivateDnsEnforcementResult.Error(message)
+            }
+        } catch (e: Exception) {
+            val message = "${e.javaClass.simpleName}: ${e.message}"
+
+            setPrivateDnsDiagnosticStatus(
                     owner = owner,
                     active = active,
                     mode = mode,
-                    serviceClass = service.javaClass.name,
-                    dpmResult = result,
-                    exception = null,
+                    serviceClass = "Public DevicePolicyManager API",
+                    dpmResult = null,
+                    exception = message,
                     finalError = message,
-                )
-    
-                PrivateDnsEnforcementResult.Error(message)
-            }
-    
-        } catch (e: Exception) {
-            val message =
-                "${e.javaClass.simpleName}: ${e.message}"
-    
-            setPrivateDnsDiagnosticStatus(
-                owner = owner,
-                active = active,
-                mode = mode,
-                dpmResult = null,
-                exception = message,
-                finalError = message,
             )
-    
+
             PrivateDnsEnforcementResult.Error(message)
         }
     }
 
-    private fun findFieldInHierarchy(
-        clazz: Class<*>,
-        fieldName: String
-    ): java.lang.reflect.Field {
+    private fun findFieldInHierarchy(clazz: Class<*>, fieldName: String): java.lang.reflect.Field {
         var current: Class<*>? = clazz
-    
+
         while (current != null) {
             try {
                 return current.getDeclaredField(fieldName)
@@ -183,10 +156,8 @@ class DeviceOwnerManager(private val context: Context) {
                 current = current.superclass
             }
         }
-    
-        throw NoSuchFieldException(
-            "$fieldName not found in ${clazz.name} or its superclasses"
-        )
+
+        throw NoSuchFieldException("$fieldName not found in ${clazz.name} or its superclasses")
     }
 
     private fun setPrivateDnsDiagnosticStatus(
