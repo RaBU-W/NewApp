@@ -39,7 +39,10 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 @Composable
-fun OwnershipTransferScreen(onStartCountdown: (Long) -> Unit) {
+fun OwnershipTransferScreen(
+    onStartCountdown: (Long) -> Unit,
+    showDnsBlockedNotice: Boolean = false,
+) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
     val manager = remember(context) { DeviceOwnerManager(context.applicationContext) }
@@ -83,6 +86,14 @@ fun OwnershipTransferScreen(onStartCountdown: (Long) -> Unit) {
                 style = MaterialTheme.typography.headlineSmall,
                 fontWeight = FontWeight.Bold,
             )
+            if (showDnsBlockedNotice) {
+                Spacer(modifier = Modifier.height(12.dp))
+                Text(
+                    text = "DNS setting disabled hai. Toggle off karne ke baad hi DNS/Private DNS setting open hogi.",
+                    style = MaterialTheme.typography.bodyLarge,
+                    fontWeight = FontWeight.Bold,
+                )
+            }
             Spacer(modifier = Modifier.height(12.dp))
             Text(
                 text = statusMessage,
@@ -196,6 +207,6 @@ private fun dnsLockDescription(
     isApplyingPrivateDnsBlock -> "DNS policy apply ho rahi hai, please wait..."
     !canControlPrivateDns -> "Ye DNS block feature sirf Android 16 users ke liye hai."
     !isDeviceOwner -> "Toggle tabhi enable hoga jab ye app Device Owner hoga."
-    isPrivateDnsBlocked -> "DNS configuration blocked hai. Current DNS wahi rahega; OriginOS fallback ke liye Settings app bhi suspend hai jab tak toggle off na ho."
-    else -> "Toggle on karne par app DNS restrictions lagayega aur OriginOS fallback ke liye Settings app suspend karega, taaki DNS badla na ja sake."
+    isPrivateDnsBlocked -> "DNS configuration blocked hai. Current DNS wahi rahega; DNS settings intent open hone par ye app disabled message dikhayega."
+    else -> "Toggle on karne par app DNS restrictions lagayega aur DNS settings intent ko is app par route karega."
 }

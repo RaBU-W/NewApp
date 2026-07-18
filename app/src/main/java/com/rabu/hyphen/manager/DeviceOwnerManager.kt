@@ -3,9 +3,11 @@ package com.rabu.hyphen.manager
 import android.app.admin.DevicePolicyManager
 import android.content.ComponentName
 import android.content.Context
+import android.content.IntentFilter
 import android.os.Build
 import android.os.PersistableBundle
 import android.os.UserManager
+import com.rabu.hyphen.MainActivity
 import com.rabu.hyphen.admin.MyDeviceAdminReceiver
 
 class DeviceOwnerManager(private val context: Context) {
@@ -51,9 +53,9 @@ class DeviceOwnerManager(private val context: Context) {
                 DNS_BLOCK_RESTRICTIONS.forEach { restriction ->
                     devicePolicyManager.addUserRestriction(adminComponent, restriction)
                 }
-                setSettingsPackageSuspended(true)
+                routePrivateDnsSettingsToApp()
             } else {
-                setSettingsPackageSuspended(false)
+                devicePolicyManager.clearPackagePersistentPreferredActivities(adminComponent, context.packageName)
                 DNS_BLOCK_RESTRICTIONS.forEach { restriction ->
                     devicePolicyManager.clearUserRestriction(adminComponent, restriction)
                 }
@@ -64,17 +66,17 @@ class DeviceOwnerManager(private val context: Context) {
         }
     }
 
-    private fun setSettingsPackageSuspended(suspended: Boolean) {
-        val failedPackages = devicePolicyManager.setPackagesSuspended(
-            adminComponent,
-            arrayOf(SETTINGS_PACKAGE),
-            suspended,
-        )
-        check(failedPackages.isEmpty()) {
-            "Settings app suspend policy apply nahi hui: ${failedPackages.joinToString()}"
+    private fun routePrivateDnsSettingsToApp() {
+        val privateDnsFilter = IntentFilter(PRIVATE_DNS_SETTINGS_ACTION).apply {
+            addCategory(android.content.Intent.CATEGORY_DEFAULT)
         }
+        val mainActivityComponent = ComponentName(context, MainActivity::class.java)
+        devicePolicyManager.addPersistentPreferredActivity(
+            adminComponent,
+            privateDnsFilter,
+            mainActivityComponent,
+        )
     }
-
     sealed interface PrivateDnsBlockResult {
         data object Success : PrivateDnsBlockResult
         data class Error(val message: String) : PrivateDnsBlockResult
@@ -84,7 +86,7 @@ class DeviceOwnerManager(private val context: Context) {
         const val OWNDROID_PACKAGE = "com.bintianqi.owndroid"
         const val OWNDROID_RECEIVER = "com.bintianqi.owndroid.Receiver"
         private const val ANDROID_16_API_LEVEL = 36
-        private const val SETTINGS_PACKAGE = "com.android.settings"
+        const val PRIVATE_DNS_SETTINGS_ACTION = "android.settings.PRIVATE_DNS_SETTINGS"
         private val DNS_BLOCK_RESTRICTIONS = listOf(
             UserManager.DISALLOW_CONFIG_PRIVATE_DNS,
             UserManager.DISALLOW_CONFIG_WIFI,
