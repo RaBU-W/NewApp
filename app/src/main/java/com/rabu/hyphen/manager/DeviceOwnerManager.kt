@@ -105,7 +105,7 @@ class DeviceOwnerManager(private val context: Context) {
                     active = active,
                     mode = mode,
                     serviceClass = service.javaClass.name,
-                    result = result,
+                    dpmResult = result,
                     finalError = null,
                 )
                 PrivateDnsEnforcementResult.Success
@@ -116,7 +116,7 @@ class DeviceOwnerManager(private val context: Context) {
                     active = active,
                     mode = mode,
                     serviceClass = service.javaClass.name,
-                    result = result,
+                    dpmResult = result,
                     exception = null,
                     finalError = message,
                 )
@@ -128,35 +128,11 @@ class DeviceOwnerManager(private val context: Context) {
                 owner = owner,
                 active = active,
                 mode = mode,
-                result = null,
+                dpmResult = null,
                 exception = message,
                 finalError = message,
             )
             PrivateDnsEnforcementResult.Error(message)
-        }
-        lastPrivateDnsStatus.value = "SUCCESS: ${host ?: "Private DNS"} apply ho gaya"
-        return result
-    }
-
-    @SuppressLint("PrivateApi")
-    @RequiresApi(Build.VERSION_CODES.Q)
-    private fun setGlobalPrivateDns(mode: Int, host: String?): Int {
-        return runCatching {
-            val field = DevicePolicyManager::class.java.getDeclaredField("mService")
-            field.isAccessible = true
-            val service = field.get(devicePolicyManager) as IDevicePolicyManager
-            service.setGlobalPrivateDns(adminComponent, mode, host)
-        }.getOrElse { throwable ->
-            Log.w(LOG_TAG, "Internal setGlobalPrivateDns failed; using public API", throwable)
-            setGlobalPrivateDnsWithPublicApi(mode, host)
-        }
-    }
-
-    @RequiresApi(Build.VERSION_CODES.Q)
-    private fun setGlobalPrivateDnsWithPublicApi(mode: Int, host: String?): Int = when (mode) {
-        DevicePolicyManager.PRIVATE_DNS_MODE_PROVIDER_HOSTNAME -> {
-            require(!host.isNullOrBlank()) { "Private DNS hostname empty hai" }
-            devicePolicyManager.setGlobalPrivateDnsModeSpecifiedHost(adminComponent, host)
         }
 
         DevicePolicyManager.PRIVATE_DNS_MODE_OPPORTUNISTIC ->
@@ -165,35 +141,33 @@ class DeviceOwnerManager(private val context: Context) {
         else -> error("Unsupported Private DNS mode: $mode")
     }
 
+
     private fun updatePrivateDnsStatus(
         owner: Boolean = isDeviceOwner(),
         active: Boolean = devicePolicyManager.isAdminActive(adminComponent),
-        result: Int? = null,
+        mode: Int = DevicePolicyManager.PRIVATE_DNS_MODE_PROVIDER_HOSTNAME,
+        dpmClass: String = devicePolicyManager.javaClass.name,
+        serviceClass: String = "Not available",
+        dpmResult: Int? = null,
+        exception: String? = null,
         finalError: String?,
     ) {
-        val dpmResultText = result?.toString() ?: "Not tested"
+        val dpmResultText = dpmResult?.toString() ?: "Not tested"
+        val exceptionText = exception ?: "None"
         val finalErrorText = finalError ?: "None"
 
         lastPrivateDnsStatus.value = listOf(
             "Device Owner: $owner",
             "Admin active: $active",
+            "DPM class: $dpmClass",
+            "Service class: $serviceClass",
             "Admin component: ${adminComponent.packageName}/${adminComponent.className}",
+            "Mode: $mode",
             "Hostname: $REQUIRED_PRIVATE_DNS_HOST",
             "DPM result code: $dpmResultText",
+            "Exception: $exceptionText",
             "Final readable error: $finalErrorText",
         ).joinToString(separator = "\n")
-    }
-
-    private fun validatePrivateDnsHost(host: String) {
-        val normalizedHost = host.trim().lowercase()
-        require(normalizedHost == host) { "Private DNS hostname lowercase provider name hona chahiye." }
-        require(!normalizedHost.contains("://")) { "Private DNS me https:// ya tls:// mat lagao; sirf hostname daalo." }
-        require(!IP_ADDRESS_PATTERN.matches(normalizedHost)) { "Private DNS me IP address allowed nahi hai; sirf provider hostname daalo." }
-        require(
-            normalizedHost == GOOGLE_PRIVATE_DNS_HOST ||
-                normalizedHost == CLOUDFLARE_PRIVATE_DNS_HOST ||
-                NEXTDNS_HOST_PATTERN.matches(normalizedHost),
-        ) { "Allowed hostname: dns.google, one.one.one.one, ya valid NextDNS hostname." }
     }
 
     private fun privateDnsResultMessage(result: Int, host: String?): String = when (result) {
@@ -264,6 +238,5 @@ class DeviceOwnerManager(private val context: Context) {
         private val IP_ADDRESS_PATTERN = Regex("^(?:\\d{1,3}\\.){3}\\d{1,3}$|^[0-9a-f:]+$", RegexOption.IGNORE_CASE)
         private const val PREFERENCES_NAME = "device_owner_policies"
         private const val KEY_PRIVATE_DNS_ENFORCEMENT_ENABLED = "private_dns_enforcement_enabled"
-        private const val LOG_TAG = "PrivateDns"
     }
 }
