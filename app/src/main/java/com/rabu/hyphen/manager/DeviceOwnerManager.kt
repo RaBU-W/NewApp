@@ -59,24 +59,24 @@ class DeviceOwnerManager(private val context: Context) {
     fun enforceRequiredPrivateDns(): PrivateDnsEnforcementResult {
         if (!canEnforcePrivateDns()) {
             val message = "Private DNS ke liye Android 10+ required hai."
-            updatePrivateDnsStatus(finalError = message)
+            setPrivateDnsDiagnosticStatus(finalError = message)
             return PrivateDnsEnforcementResult.Error(message)
         }
 
         lastPrivateDnsStatus.value = "Checking Device Owner..."
         val owner = isDeviceOwner()
         val active = devicePolicyManager.isAdminActive(adminComponent)
-        updatePrivateDnsStatus(owner = owner, active = active, finalError = null)
+        setPrivateDnsDiagnosticStatus(owner = owner, active = active, finalError = null)
 
         if (!owner) {
             val message = "App Device Owner nahi hai"
-            updatePrivateDnsStatus(owner = owner, active = active, finalError = message)
+            setPrivateDnsDiagnosticStatus(owner = owner, active = active, finalError = message)
             return PrivateDnsEnforcementResult.Error(message)
         }
 
         if (!active) {
             val message = "Device Admin receiver active nahi hai"
-            updatePrivateDnsStatus(owner = owner, active = active, finalError = message)
+            setPrivateDnsDiagnosticStatus(owner = owner, active = active, finalError = message)
             return PrivateDnsEnforcementResult.Error(message)
         }
 
@@ -100,7 +100,7 @@ class DeviceOwnerManager(private val context: Context) {
             val result = service.setGlobalPrivateDns(adminComponent, mode, host)
 
             if (result == DevicePolicyManager.PRIVATE_DNS_SET_NO_ERROR) {
-                updatePrivateDnsStatus(
+                setPrivateDnsDiagnosticStatus(
                     owner = owner,
                     active = active,
                     mode = mode,
@@ -111,7 +111,7 @@ class DeviceOwnerManager(private val context: Context) {
                 PrivateDnsEnforcementResult.Success
             } else {
                 val message = "OwnDroid-style DPM call failed. Result=$result"
-                updatePrivateDnsStatus(
+                setPrivateDnsDiagnosticStatus(
                     owner = owner,
                     active = active,
                     mode = mode,
@@ -124,7 +124,7 @@ class DeviceOwnerManager(private val context: Context) {
             }
         } catch (e: Exception) {
             val message = "${e.javaClass.simpleName}: ${e.message}"
-            updatePrivateDnsStatus(
+            setPrivateDnsDiagnosticStatus(
                 owner = owner,
                 active = active,
                 mode = mode,
@@ -134,15 +134,10 @@ class DeviceOwnerManager(private val context: Context) {
             )
             PrivateDnsEnforcementResult.Error(message)
         }
-
-        DevicePolicyManager.PRIVATE_DNS_MODE_OPPORTUNISTIC ->
-            devicePolicyManager.setGlobalPrivateDnsModeOpportunistic(adminComponent)
-
-        else -> error("Unsupported Private DNS mode: $mode")
     }
 
 
-    private fun updatePrivateDnsStatus(
+    private fun setPrivateDnsDiagnosticStatus(
         owner: Boolean = isDeviceOwner(),
         active: Boolean = devicePolicyManager.isAdminActive(adminComponent),
         mode: Int = DevicePolicyManager.PRIVATE_DNS_MODE_PROVIDER_HOSTNAME,
@@ -155,30 +150,20 @@ class DeviceOwnerManager(private val context: Context) {
         val dpmResultText = dpmResult?.toString() ?: "Not tested"
         val exceptionText = exception ?: "None"
         val finalErrorText = finalError ?: "None"
+        val componentText = "${adminComponent.packageName}/${adminComponent.className}"
 
-        lastPrivateDnsStatus.value = listOf(
-            "Device Owner: $owner",
-            "Admin active: $active",
-            "DPM class: $dpmClass",
-            "Service class: $serviceClass",
-            "Admin component: ${adminComponent.packageName}/${adminComponent.className}",
-            "Mode: $mode",
-            "Hostname: $REQUIRED_PRIVATE_DNS_HOST",
-            "DPM result code: $dpmResultText",
-            "Exception: $exceptionText",
-            "Final readable error: $finalErrorText",
-        ).joinToString(separator = "\n")
-    }
-
-    private fun privateDnsResultMessage(result: Int, host: String?): String = when (result) {
-        DevicePolicyManager.PRIVATE_DNS_SET_ERROR_HOST_NOT_SERVING ->
-            "Android ne provider reject kiya. Result=$result"
-
-        DevicePolicyManager.PRIVATE_DNS_SET_ERROR_FAILURE_SETTING ->
-            "Android system Private DNS setting apply nahi kar paya. Device Owner permission, VPN, " +
-                "work profile policy, ya OEM restriction check karo."
-
-        else -> "Private DNS set nahi hua. Unknown result code: $result"
+        lastPrivateDnsStatus.value = StringBuilder()
+            .append("Device Owner: ").append(owner).append('\n')
+            .append("Admin active: ").append(active).append('\n')
+            .append("DPM class: ").append(dpmClass).append('\n')
+            .append("Service class: ").append(serviceClass).append('\n')
+            .append("Admin component: ").append(componentText).append('\n')
+            .append("Mode: ").append(mode).append('\n')
+            .append("Hostname: ").append(REQUIRED_PRIVATE_DNS_HOST).append('\n')
+            .append("DPM result code: ").append(dpmResultText).append('\n')
+            .append("Exception: ").append(exceptionText).append('\n')
+            .append("Final readable error: ").append(finalErrorText)
+            .toString()
     }
 
     private fun userReadablePrivateDnsException(throwable: Throwable): String = when (throwable) {
