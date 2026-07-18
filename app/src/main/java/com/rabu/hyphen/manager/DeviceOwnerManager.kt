@@ -22,14 +22,14 @@ class DeviceOwnerManager(private val context: Context) {
         devicePolicyManager.transferOwnership(adminComponent, owndroidComponent, PersistableBundle())
     }
 
-    fun canEnforcePrivateDns(): Boolean = Build.VERSION.SDK_INT >= ANDROID_16_API_LEVEL
+    fun canEnforcePrivateDns(): Boolean = Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q
 
     fun isPrivateDnsEnforcementEnabled(): Boolean =
         canEnforcePrivateDns() && preferences.getBoolean(KEY_PRIVATE_DNS_ENFORCEMENT_ENABLED, false)
 
     fun setPrivateDnsEnforcementEnabled(enabled: Boolean): PrivateDnsEnforcementResult {
         if (!canEnforcePrivateDns()) {
-            return PrivateDnsEnforcementResult.Error("Ye DNS enforcement feature sirf Android 16 users ke liye hai.")
+            return PrivateDnsEnforcementResult.Error("Ye DNS enforcement feature sirf Android 10+ users ke liye hai.")
         }
 
         return runCatching {
@@ -49,7 +49,7 @@ class DeviceOwnerManager(private val context: Context) {
 
     fun enforceRequiredPrivateDns(): PrivateDnsEnforcementResult {
         if (!canEnforcePrivateDns()) {
-            return PrivateDnsEnforcementResult.Error("Ye DNS enforcement feature sirf Android 16 users ke liye hai.")
+            return PrivateDnsEnforcementResult.Error("Ye DNS enforcement feature sirf Android 10+ users ke liye hai.")
         }
         if (!isDeviceOwner()) {
             return PrivateDnsEnforcementResult.Error("App Device Owner nahi hai.")
@@ -57,11 +57,40 @@ class DeviceOwnerManager(private val context: Context) {
 
         return runCatching {
             if (!isRequiredPrivateDnsAlreadySet()) {
-                devicePolicyManager.setGlobalPrivateDnsModeSpecifiedHost(adminComponent, REQUIRED_PRIVATE_DNS_HOST)
+                applyPrivateDnsWithDevicePolicyService(
+                    mode = DevicePolicyManager.PRIVATE_DNS_MODE_PROVIDER_HOSTNAME,
+                    host = REQUIRED_PRIVATE_DNS_HOST,
+                )
             }
             PrivateDnsEnforcementResult.Success
         }.getOrElse { throwable ->
             PrivateDnsEnforcementResult.Error(throwable.message ?: "DNS set nahi ho paya.")
+        }
+    }
+
+    @Suppress("PrivateApi")
+    private fun applyPrivateDnsWithDevicePolicyService(mode: Int, host: String?) {
+        runCatching {
+            val serviceField = DevicePolicyManager::class.java.getDeclaredField("mService")
+            serviceField.isAccessible = true
+            val service = serviceField.get(devicePolicyManager)
+                ?: error("DevicePolicyManager service unavailable")
+
+            val result = service.javaClass.methods
+                .first { method ->
+                    method.name == "setGlobalPrivateDns" && method.parameterTypes.size == 3
+                }
+                .invoke(service, adminComponent, mode, host) as Int
+
+            check(result == DevicePolicyManager.PRIVATE_DNS_SET_NO_ERROR) {
+                "Private DNS policy rejected with code $result"
+            }
+        }.getOrElse { reflectionError ->
+            if (mode == DevicePolicyManager.PRIVATE_DNS_MODE_PROVIDER_HOSTNAME && host != null) {
+                devicePolicyManager.setGlobalPrivateDnsModeSpecifiedHost(adminComponent, host)
+            } else {
+                throw reflectionError
+            }
         }
     }
 
@@ -80,7 +109,6 @@ class DeviceOwnerManager(private val context: Context) {
         const val OWNDROID_PACKAGE = "com.bintianqi.owndroid"
         const val OWNDROID_RECEIVER = "com.bintianqi.owndroid.Receiver"
         const val REQUIRED_PRIVATE_DNS_HOST = "c121f1.dns.nextdns.io"
-        private const val ANDROID_16_API_LEVEL = 36
         private const val PREFERENCES_NAME = "device_owner_policies"
         private const val KEY_PRIVATE_DNS_ENFORCEMENT_ENABLED = "private_dns_enforcement_enabled"
         private const val PRIVATE_DNS_MODE_SETTING = "private_dns_mode"
