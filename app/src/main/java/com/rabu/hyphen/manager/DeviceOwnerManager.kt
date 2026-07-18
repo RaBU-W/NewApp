@@ -15,12 +15,6 @@ class DeviceOwnerManager(private val context: Context) {
     private val preferences = context.getSharedPreferences(PREFERENCES_NAME, Context.MODE_PRIVATE)
 
     private val adminComponent = ComponentName(context, MyDeviceAdminReceiver::class.java)
-    private val actualDeviceOwnerComponent: ComponentName?
-        get() = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            devicePolicyManager.getDeviceOwnerComponentOnAnyUser()
-        } else {
-            adminComponent
-        }
     private val owndroidComponent = ComponentName(OWNDROID_PACKAGE, OWNDROID_RECEIVER)
 
     fun isDeviceOwner(): Boolean = devicePolicyManager.isDeviceOwnerApp(context.packageName)
