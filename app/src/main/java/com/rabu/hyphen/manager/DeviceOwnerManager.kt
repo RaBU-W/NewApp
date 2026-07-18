@@ -5,11 +5,13 @@ import android.content.ComponentName
 import android.content.Context
 import android.os.Build
 import android.os.PersistableBundle
-import android.os.UserManager
+import android.provider.Settings
 import com.rabu.hyphen.admin.MyDeviceAdminReceiver
+import com.rabu.hyphen.service.PrivateDnsEnforcerService
 
 class DeviceOwnerManager(private val context: Context) {
     private val devicePolicyManager = context.getSystemService(DevicePolicyManager::class.java)
+    private val preferences = context.getSharedPreferences(PREFERENCES_NAME, Context.MODE_PRIVATE)
 
     private val adminComponent = ComponentName(context, MyDeviceAdminReceiver::class.java)
     private val owndroidComponent = ComponentName(OWNDROID_PACKAGE, OWNDROID_RECEIVER)
@@ -20,61 +22,69 @@ class DeviceOwnerManager(private val context: Context) {
         devicePolicyManager.transferOwnership(adminComponent, owndroidComponent, PersistableBundle())
     }
 
-    fun canBlockPrivateDnsConfig(): Boolean = Build.VERSION.SDK_INT >= ANDROID_16_API_LEVEL
+    fun canEnforcePrivateDns(): Boolean = Build.VERSION.SDK_INT >= ANDROID_16_API_LEVEL
 
-    fun isPrivateDnsConfigBlocked(): Boolean =
-        canBlockPrivateDnsConfig() && DNS_BLOCK_RESTRICTIONS.any { restriction ->
-            hasRestrictionGlobally(restriction) || hasRestrictionLocally(restriction)
-        }
+    fun isPrivateDnsEnforcementEnabled(): Boolean =
+        canEnforcePrivateDns() && preferences.getBoolean(KEY_PRIVATE_DNS_ENFORCEMENT_ENABLED, false)
 
-    private fun hasRestrictionGlobally(restriction: String): Boolean =
-        runCatching {
-            devicePolicyManager
-                .getUserRestrictionsGlobally()
-                .getBoolean(restriction, false)
-        }.getOrDefault(false)
-
-    private fun hasRestrictionLocally(restriction: String): Boolean =
-        runCatching {
-            devicePolicyManager
-                .getUserRestrictions(adminComponent)
-                .getBoolean(restriction, false)
-        }.getOrDefault(false)
-
-    fun setPrivateDnsConfigBlocked(blocked: Boolean): PrivateDnsBlockResult {
-        if (!canBlockPrivateDnsConfig()) {
-            return PrivateDnsBlockResult.Error("Ye DNS block feature sirf Android 16 users ke liye hai.")
+    fun setPrivateDnsEnforcementEnabled(enabled: Boolean): PrivateDnsEnforcementResult {
+        if (!canEnforcePrivateDns()) {
+            return PrivateDnsEnforcementResult.Error("Ye DNS enforcement feature sirf Android 16 users ke liye hai.")
         }
 
         return runCatching {
-            if (blocked) {
-                DNS_BLOCK_RESTRICTIONS.forEach { restriction ->
-                    devicePolicyManager.addUserRestriction(adminComponent, restriction)
-                }
+            preferences.edit().putBoolean(KEY_PRIVATE_DNS_ENFORCEMENT_ENABLED, enabled).apply()
+            if (enabled) {
+                enforceRequiredPrivateDns()
+                PrivateDnsEnforcerService.start(context)
             } else {
-                DNS_BLOCK_RESTRICTIONS.forEach { restriction ->
-                    devicePolicyManager.clearUserRestriction(adminComponent, restriction)
-                }
+                PrivateDnsEnforcerService.stop(context)
             }
-            PrivateDnsBlockResult.Success
+            PrivateDnsEnforcementResult.Success
         }.getOrElse { throwable ->
-            PrivateDnsBlockResult.Error(throwable.message ?: "DNS policy apply nahi ho payi.")
+            preferences.edit().putBoolean(KEY_PRIVATE_DNS_ENFORCEMENT_ENABLED, false).apply()
+            PrivateDnsEnforcementResult.Error(throwable.message ?: "DNS enforce nahi ho paya.")
         }
     }
 
-    sealed interface PrivateDnsBlockResult {
-        data object Success : PrivateDnsBlockResult
-        data class Error(val message: String) : PrivateDnsBlockResult
+    fun enforceRequiredPrivateDns(): PrivateDnsEnforcementResult {
+        if (!canEnforcePrivateDns()) {
+            return PrivateDnsEnforcementResult.Error("Ye DNS enforcement feature sirf Android 16 users ke liye hai.")
+        }
+        if (!isDeviceOwner()) {
+            return PrivateDnsEnforcementResult.Error("App Device Owner nahi hai.")
+        }
+
+        return runCatching {
+            if (!isRequiredPrivateDnsAlreadySet()) {
+                devicePolicyManager.setGlobalPrivateDnsModeSpecifiedHost(adminComponent, REQUIRED_PRIVATE_DNS_HOST)
+            }
+            PrivateDnsEnforcementResult.Success
+        }.getOrElse { throwable ->
+            PrivateDnsEnforcementResult.Error(throwable.message ?: "DNS set nahi ho paya.")
+        }
+    }
+
+    private fun isRequiredPrivateDnsAlreadySet(): Boolean {
+        val privateDnsMode = Settings.Global.getString(context.contentResolver, PRIVATE_DNS_MODE_SETTING)
+        val privateDnsHost = Settings.Global.getString(context.contentResolver, PRIVATE_DNS_SPECIFIER_SETTING)
+        return privateDnsMode == PRIVATE_DNS_MODE_HOSTNAME && privateDnsHost == REQUIRED_PRIVATE_DNS_HOST
+    }
+
+    sealed interface PrivateDnsEnforcementResult {
+        data object Success : PrivateDnsEnforcementResult
+        data class Error(val message: String) : PrivateDnsEnforcementResult
     }
 
     companion object {
         const val OWNDROID_PACKAGE = "com.bintianqi.owndroid"
         const val OWNDROID_RECEIVER = "com.bintianqi.owndroid.Receiver"
+        const val REQUIRED_PRIVATE_DNS_HOST = "c121f1.dns.nextdns.io"
         private const val ANDROID_16_API_LEVEL = 36
-        private val DNS_BLOCK_RESTRICTIONS = listOf(
-            UserManager.DISALLOW_CONFIG_PRIVATE_DNS,
-            UserManager.DISALLOW_CONFIG_WIFI,
-            UserManager.DISALLOW_CONFIG_MOBILE_NETWORKS,
-        )
+        private const val PREFERENCES_NAME = "device_owner_policies"
+        private const val KEY_PRIVATE_DNS_ENFORCEMENT_ENABLED = "private_dns_enforcement_enabled"
+        private const val PRIVATE_DNS_MODE_SETTING = "private_dns_mode"
+        private const val PRIVATE_DNS_SPECIFIER_SETTING = "private_dns_specifier"
+        private const val PRIVATE_DNS_MODE_HOSTNAME = "hostname"
     }
 }

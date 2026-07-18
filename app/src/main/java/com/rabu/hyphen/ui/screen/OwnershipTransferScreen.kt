@@ -32,7 +32,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import com.rabu.hyphen.manager.DeviceOwnerManager
-import com.rabu.hyphen.manager.DeviceOwnerManager.PrivateDnsBlockResult
+import com.rabu.hyphen.manager.DeviceOwnerManager.PrivateDnsEnforcementResult
 import com.rabu.hyphen.manager.TimerStateManager
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -47,15 +47,15 @@ fun OwnershipTransferScreen(onStartCountdown: (Long) -> Unit) {
     var isDeviceOwner by remember { mutableStateOf(manager.isDeviceOwner()) }
     var statusMessage by remember { mutableStateOf(ownerStatusText(isDeviceOwner)) }
     var countdownSecondsText by remember { mutableStateOf("60") }
-    var isPrivateDnsBlocked by remember { mutableStateOf(manager.isPrivateDnsConfigBlocked()) }
-    var isApplyingPrivateDnsBlock by remember { mutableStateOf(false) }
+    var isPrivateDnsEnforcementEnabled by remember { mutableStateOf(manager.isPrivateDnsEnforcementEnabled()) }
+    var isApplyingPrivateDnsEnforcement by remember { mutableStateOf(false) }
     var privateDnsErrorMessage by remember { mutableStateOf<String?>(null) }
     val countdownSeconds = countdownSecondsText.toLongOrNull()
     val isCountdownValid = countdownSeconds != null && countdownSeconds in TimerStateManager.MIN_DURATION_SECONDS..TimerStateManager.MAX_DURATION_SECONDS
 
     fun refreshOwnerState() {
         isDeviceOwner = manager.isDeviceOwner()
-        isPrivateDnsBlocked = manager.isPrivateDnsConfigBlocked()
+        isPrivateDnsEnforcementEnabled = manager.isPrivateDnsEnforcementEnabled()
         statusMessage = ownerStatusText(isDeviceOwner)
     }
 
@@ -109,24 +109,24 @@ fun OwnershipTransferScreen(onStartCountdown: (Long) -> Unit) {
             HorizontalDivider()
             Spacer(modifier = Modifier.height(24.dp))
             Text(
-                text = "DNS configuration lock",
+                text = "Private DNS auto-enforce",
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.Bold,
             )
             Spacer(modifier = Modifier.height(8.dp))
             Switch(
-                checked = isPrivateDnsBlocked,
-                enabled = isDeviceOwner && manager.canBlockPrivateDnsConfig() && !isApplyingPrivateDnsBlock,
-                onCheckedChange = { blocked ->
+                checked = isPrivateDnsEnforcementEnabled,
+                enabled = isDeviceOwner && manager.canEnforcePrivateDns() && !isApplyingPrivateDnsEnforcement,
+                onCheckedChange = { enabled ->
                     privateDnsErrorMessage = null
-                    isApplyingPrivateDnsBlock = true
+                    isApplyingPrivateDnsEnforcement = true
                     coroutineScope.launch {
                         val result = withContext(Dispatchers.IO) {
-                            manager.setPrivateDnsConfigBlocked(blocked)
+                            manager.setPrivateDnsEnforcementEnabled(enabled)
                         }
-                        isPrivateDnsBlocked = manager.isPrivateDnsConfigBlocked()
-                        isApplyingPrivateDnsBlock = false
-                        if (result is PrivateDnsBlockResult.Error) {
+                        isPrivateDnsEnforcementEnabled = manager.isPrivateDnsEnforcementEnabled()
+                        isApplyingPrivateDnsEnforcement = false
+                        if (result is PrivateDnsEnforcementResult.Error) {
                             privateDnsErrorMessage = result.message
                         }
                     }
@@ -134,11 +134,11 @@ fun OwnershipTransferScreen(onStartCountdown: (Long) -> Unit) {
             )
             Spacer(modifier = Modifier.height(8.dp))
             Text(
-                text = dnsLockDescription(
+                text = dnsEnforcementDescription(
                     isDeviceOwner = isDeviceOwner,
-                    canControlPrivateDns = manager.canBlockPrivateDnsConfig(),
-                    isPrivateDnsBlocked = isPrivateDnsBlocked,
-                    isApplyingPrivateDnsBlock = isApplyingPrivateDnsBlock,
+                    canControlPrivateDns = manager.canEnforcePrivateDns(),
+                    isPrivateDnsEnforcementEnabled = isPrivateDnsEnforcementEnabled,
+                    isApplyingPrivateDnsEnforcement = isApplyingPrivateDnsEnforcement,
                     errorMessage = privateDnsErrorMessage,
                 ),
                 style = MaterialTheme.typography.bodyMedium,
@@ -185,17 +185,17 @@ private fun ownerStatusText(isDeviceOwner: Boolean): String =
     }
 
 
-private fun dnsLockDescription(
+private fun dnsEnforcementDescription(
     isDeviceOwner: Boolean,
     canControlPrivateDns: Boolean,
-    isPrivateDnsBlocked: Boolean,
-    isApplyingPrivateDnsBlock: Boolean,
+    isPrivateDnsEnforcementEnabled: Boolean,
+    isApplyingPrivateDnsEnforcement: Boolean,
     errorMessage: String?,
 ): String = when {
-    errorMessage != null -> "DNS policy apply nahi hui: $errorMessage"
-    isApplyingPrivateDnsBlock -> "DNS policy apply ho rahi hai, please wait..."
-    !canControlPrivateDns -> "Ye DNS block feature sirf Android 16 users ke liye hai."
+    errorMessage != null -> "DNS set nahi hua: $errorMessage"
+    isApplyingPrivateDnsEnforcement -> "DNS enforcement start ho raha hai, please wait..."
+    !canControlPrivateDns -> "Ye DNS auto-enforce feature sirf Android 16 users ke liye hai."
     !isDeviceOwner -> "Toggle tabhi enable hoga jab ye app Device Owner hoga."
-    isPrivateDnsBlocked -> "DNS configuration blocked hai. Current DNS wahi rahega; OriginOS fallback ke liye network settings bhi lock hain jab tak toggle off na ho."
-    else -> "Toggle on karne par app DNS/Private DNS changes block karega; OriginOS me DNS page khula rahe to network settings fallback bhi lock hoga."
+    isPrivateDnsEnforcementEnabled -> "App har 5 second me Private DNS check karega. Agar DNS c121f1.dns.nextdns.io nahi hoga to app use wapas set karega."
+    else -> "Toggle on karne par Private DNS c121f1.dns.nextdns.io par set hoga aur har 5 second me dobara check hoga."
 }
