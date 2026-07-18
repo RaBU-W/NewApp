@@ -1,5 +1,6 @@
 package com.rabu.hyphen.manager
 
+import android.annotation.SuppressLint
 import android.app.admin.DevicePolicyManager
 import android.app.admin.IDevicePolicyManager
 import android.content.ComponentName
@@ -165,6 +166,48 @@ class DeviceOwnerManager(private val context: Context) {
             .toString()
     }
 
+    private fun userReadablePrivateDnsException(throwable: Throwable): String = when (throwable) {
+        is PrivateDnsResultException -> throwable.message ?: "Private DNS failed. Result=${throwable.result}"
+        is SecurityException -> "Device Owner permission valid nahi hai: ${throwable.message.orEmpty()}"
+        is IllegalArgumentException -> "Private DNS hostname invalid hai: ${throwable.message.orEmpty()}"
+        is IllegalStateException -> throwable.message ?: "Private DNS set nahi hua."
+        else -> throwable.message ?: throwable::class.java.simpleName
+    }
+
+
+    private fun updatePrivateDnsStatus(
+        owner: Boolean = isDeviceOwner(),
+        active: Boolean = devicePolicyManager.isAdminActive(adminComponent),
+        mode: Int = DevicePolicyManager.PRIVATE_DNS_MODE_PROVIDER_HOSTNAME,
+        dpmClass: String = devicePolicyManager.javaClass.name,
+        serviceClass: String = "Not available",
+        result: Int? = null,
+        exception: String? = null,
+        finalError: String?,
+    ) {
+        val dpmResultText = result?.toString() ?: "Not tested"
+        val exceptionText = exception ?: "None"
+        val finalErrorText = finalError ?: "None"
+
+        lastPrivateDnsStatus.value = listOf(
+            "Device Owner: $owner",
+            "Admin active: $active",
+            "DPM class: $dpmClass",
+            "Service class: $serviceClass",
+            "Admin component: ${adminComponent.packageName}/${adminComponent.className}",
+            "Mode: $mode",
+            "Hostname: $REQUIRED_PRIVATE_DNS_HOST",
+            "DPM result code: $dpmResultText",
+            "Exception: $exceptionText",
+            "Final readable error: $finalErrorText",
+        ).joinToString(separator = "\n")
+    }
+
+    private class PrivateDnsResultException(
+        val result: Int,
+        message: String,
+    ) : IllegalStateException(message)
+
     sealed interface PrivateDnsEnforcementResult {
         data object Success : PrivateDnsEnforcementResult
         data class Error(val message: String) : PrivateDnsEnforcementResult
@@ -174,6 +217,10 @@ class DeviceOwnerManager(private val context: Context) {
         const val OWNDROID_PACKAGE = "com.bintianqi.owndroid"
         const val OWNDROID_RECEIVER = "com.bintianqi.owndroid.Receiver"
         const val REQUIRED_PRIVATE_DNS_HOST = "dns.google"
+        private const val GOOGLE_PRIVATE_DNS_HOST = REQUIRED_PRIVATE_DNS_HOST
+        private const val CLOUDFLARE_PRIVATE_DNS_HOST = "one.one.one.one"
+        private val NEXTDNS_HOST_PATTERN = Regex("^[a-z0-9-]+\\.dns\\.nextdns\\.io$")
+        private val IP_ADDRESS_PATTERN = Regex("^(?:\\d{1,3}\\.){3}\\d{1,3}$|^[0-9a-f:]+$", RegexOption.IGNORE_CASE)
         private const val PREFERENCES_NAME = "device_owner_policies"
         private const val KEY_PRIVATE_DNS_ENFORCEMENT_ENABLED = "private_dns_enforcement_enabled"
     }
