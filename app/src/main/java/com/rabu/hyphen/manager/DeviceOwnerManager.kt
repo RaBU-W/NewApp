@@ -5,7 +5,7 @@ import android.content.ComponentName
 import android.content.Context
 import android.os.Build
 import android.os.PersistableBundle
-import android.provider.Settings
+import androidx.annotation.RequiresApi
 import com.rabu.hyphen.admin.MyDeviceAdminReceiver
 import com.rabu.hyphen.service.PrivateDnsEnforcerService
 
@@ -29,75 +29,88 @@ class DeviceOwnerManager(private val context: Context) {
 
     fun setPrivateDnsEnforcementEnabled(enabled: Boolean): PrivateDnsEnforcementResult {
         if (!canEnforcePrivateDns()) {
-            return PrivateDnsEnforcementResult.Error("Ye DNS enforcement feature sirf Android 10+ users ke liye hai.")
+            return PrivateDnsEnforcementResult.Error("Private DNS ke liye Android 10+ required hai.")
         }
 
-        return runCatching {
-            preferences.edit().putBoolean(KEY_PRIVATE_DNS_ENFORCEMENT_ENABLED, enabled).apply()
-            if (enabled) {
-                enforceRequiredPrivateDns()
-                PrivateDnsEnforcerService.start(context)
-            } else {
-                PrivateDnsEnforcerService.stop(context)
-            }
-            PrivateDnsEnforcementResult.Success
-        }.getOrElse { throwable ->
+        if (!enabled) {
             preferences.edit().putBoolean(KEY_PRIVATE_DNS_ENFORCEMENT_ENABLED, false).apply()
-            PrivateDnsEnforcementResult.Error(throwable.message ?: "DNS enforce nahi ho paya.")
+            PrivateDnsEnforcerService.stop(context)
+            return PrivateDnsEnforcementResult.Success
         }
+
+        val result = enforceRequiredPrivateDns()
+        if (result is PrivateDnsEnforcementResult.Error) {
+            preferences.edit().putBoolean(KEY_PRIVATE_DNS_ENFORCEMENT_ENABLED, false).apply()
+            PrivateDnsEnforcerService.stop(context)
+            return result
+        }
+
+        preferences.edit().putBoolean(KEY_PRIVATE_DNS_ENFORCEMENT_ENABLED, true).apply()
+        PrivateDnsEnforcerService.start(context)
+        return PrivateDnsEnforcementResult.Success
     }
 
     fun enforceRequiredPrivateDns(): PrivateDnsEnforcementResult {
         if (!canEnforcePrivateDns()) {
-            return PrivateDnsEnforcementResult.Error("Ye DNS enforcement feature sirf Android 10+ users ke liye hai.")
+            return PrivateDnsEnforcementResult.Error("Private DNS ke liye Android 10+ required hai.")
         }
         if (!isDeviceOwner()) {
             return PrivateDnsEnforcementResult.Error("App Device Owner nahi hai.")
         }
 
         return runCatching {
-            if (!isRequiredPrivateDnsAlreadySet()) {
-                applyPrivateDnsWithDevicePolicyService(
-                    mode = DevicePolicyManager.PRIVATE_DNS_MODE_PROVIDER_HOSTNAME,
-                    host = REQUIRED_PRIVATE_DNS_HOST,
-                )
-            }
+            applyPrivateDnsWithDevicePolicyService(
+                mode = DevicePolicyManager.PRIVATE_DNS_MODE_PROVIDER_HOSTNAME,
+                host = REQUIRED_PRIVATE_DNS_HOST,
+            )
             PrivateDnsEnforcementResult.Success
         }.getOrElse { throwable ->
-            PrivateDnsEnforcementResult.Error(throwable.message ?: "DNS set nahi ho paya.")
+            PrivateDnsEnforcementResult.Error(throwable.stackTraceToString())
+        }
+    }
+
+    @RequiresApi(Build.VERSION_CODES.Q)
+    private fun applyPrivateDnsWithDevicePolicyService(mode: Int, host: String?) {
+        when (mode) {
+            DevicePolicyManager.PRIVATE_DNS_MODE_PROVIDER_HOSTNAME -> {
+                require(!host.isNullOrBlank()) { "Private DNS hostname empty hai" }
+                val result = devicePolicyManager.setGlobalPrivateDnsModeSpecifiedHost(adminComponent, host)
+                check(result == DevicePolicyManager.PRIVATE_DNS_SET_NO_ERROR) {
+                    "Private DNS rejected. Result code: $result"
+                }
+            }
+
+            DevicePolicyManager.PRIVATE_DNS_MODE_OPPORTUNISTIC -> {
+                val result = devicePolicyManager.setGlobalPrivateDnsModeOpportunistic(adminComponent)
+                check(result == DevicePolicyManager.PRIVATE_DNS_SET_NO_ERROR) {
+                    "Private DNS rejected. Result code: $result"
+                }
+            }
+
+            DevicePolicyManager.PRIVATE_DNS_MODE_OFF -> {
+                setPrivateDnsUsingDpmService(mode, null)
+            }
+
+            else -> error("Unsupported Private DNS mode: $mode")
         }
     }
 
     @Suppress("PrivateApi")
-    private fun applyPrivateDnsWithDevicePolicyService(mode: Int, host: String?) {
-        runCatching {
-            val serviceField = DevicePolicyManager::class.java.getDeclaredField("mService")
-            serviceField.isAccessible = true
-            val service = serviceField.get(devicePolicyManager)
-                ?: error("DevicePolicyManager service unavailable")
+    private fun setPrivateDnsUsingDpmService(mode: Int, host: String?) {
+        val serviceField = DevicePolicyManager::class.java.getDeclaredField("mService")
+        serviceField.isAccessible = true
 
-            val result = service.javaClass.methods
-                .first { method ->
-                    method.name == "setGlobalPrivateDns" && method.parameterTypes.size == 3
-                }
-                .invoke(service, adminComponent, mode, host) as Int
+        val service = serviceField.get(devicePolicyManager)
+            ?: error("DevicePolicyManager service unavailable")
 
-            check(result == DevicePolicyManager.PRIVATE_DNS_SET_NO_ERROR) {
-                "Private DNS policy rejected with code $result"
-            }
-        }.getOrElse { reflectionError ->
-            if (mode == DevicePolicyManager.PRIVATE_DNS_MODE_PROVIDER_HOSTNAME && host != null) {
-                devicePolicyManager.setGlobalPrivateDnsModeSpecifiedHost(adminComponent, host)
-            } else {
-                throw reflectionError
-            }
+        val method = service.javaClass.methods.firstOrNull {
+            it.name == "setGlobalPrivateDns" && it.parameterTypes.size == 3
+        } ?: error("setGlobalPrivateDns method nahi mila")
+
+        val result = method.invoke(service, adminComponent, mode, host) as Int
+        check(result == DevicePolicyManager.PRIVATE_DNS_SET_NO_ERROR) {
+            "Private DNS rejected. Result code: $result"
         }
-    }
-
-    private fun isRequiredPrivateDnsAlreadySet(): Boolean {
-        val privateDnsMode = Settings.Global.getString(context.contentResolver, PRIVATE_DNS_MODE_SETTING)
-        val privateDnsHost = Settings.Global.getString(context.contentResolver, PRIVATE_DNS_SPECIFIER_SETTING)
-        return privateDnsMode == PRIVATE_DNS_MODE_HOSTNAME && privateDnsHost == REQUIRED_PRIVATE_DNS_HOST
     }
 
     sealed interface PrivateDnsEnforcementResult {
@@ -111,8 +124,5 @@ class DeviceOwnerManager(private val context: Context) {
         const val REQUIRED_PRIVATE_DNS_HOST = "c121f1.dns.nextdns.io"
         private const val PREFERENCES_NAME = "device_owner_policies"
         private const val KEY_PRIVATE_DNS_ENFORCEMENT_ENABLED = "private_dns_enforcement_enabled"
-        private const val PRIVATE_DNS_MODE_SETTING = "private_dns_mode"
-        private const val PRIVATE_DNS_SPECIFIER_SETTING = "private_dns_specifier"
-        private const val PRIVATE_DNS_MODE_HOSTNAME = "hostname"
     }
 }
