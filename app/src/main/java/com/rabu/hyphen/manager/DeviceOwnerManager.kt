@@ -154,8 +154,8 @@ class DeviceOwnerManager(private val context: Context) {
     companion object {
         const val OWNDROID_PACKAGE = "com.bintianqi.owndroid"
         const val OWNDROID_RECEIVER = "com.bintianqi.owndroid.Receiver"
-        const val REQUIRED_PRIVATE_DNS_HOST = GOOGLE_PRIVATE_DNS_HOST
-        private const val GOOGLE_PRIVATE_DNS_HOST = "dns.google"
+        const val REQUIRED_PRIVATE_DNS_HOST = "dns.google"
+        private const val GOOGLE_PRIVATE_DNS_HOST = REQUIRED_PRIVATE_DNS_HOST
         private const val CLOUDFLARE_PRIVATE_DNS_HOST = "one.one.one.one"
         private val NEXTDNS_HOST_PATTERN = Regex("^[a-z0-9-]+\\.dns\\.nextdns\\.io$")
         private val IP_ADDRESS_PATTERN = Regex("^(?:\\d{1,3}\\.){3}\\d{1,3}$|^[0-9a-f:]+$", RegexOption.IGNORE_CASE)
