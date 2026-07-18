@@ -147,49 +147,17 @@ class DeviceOwnerManager(private val context: Context) {
         result: Int? = null,
         finalError: String?,
     ) {
-        lastPrivateDnsStatus.value = buildString {
-            appendLine("Device Owner: $owner")
-            appendLine("Admin active: $active")
-            appendLine("Admin component: ${adminComponent.packageName}/${adminComponent.className}")
-            appendLine("Hostname: $REQUIRED_PRIVATE_DNS_HOST")
-            appendLine("DPM result code: ${result?.toString() ?: "Not tested"}")
-            append("Final readable error: ${finalError ?: "None"}")
-        }
+        val dpmResultText = result?.toString() ?: "Not tested"
+        val finalErrorText = finalError ?: "None"
 
-        DevicePolicyManager.PRIVATE_DNS_MODE_OPPORTUNISTIC ->
-            devicePolicyManager.setGlobalPrivateDnsModeOpportunistic(adminComponent)
-
-        else -> error("Unsupported Private DNS mode: $mode")
-    }
-
-    private fun validatePrivateDnsHost(host: String) {
-        val normalizedHost = host.trim().lowercase()
-        require(normalizedHost == host) { "Private DNS hostname lowercase provider name hona chahiye." }
-        require(!normalizedHost.contains("://")) { "Private DNS me https:// ya tls:// mat lagao; sirf hostname daalo." }
-        require(!IP_ADDRESS_PATTERN.matches(normalizedHost)) { "Private DNS me IP address allowed nahi hai; sirf provider hostname daalo." }
-        require(
-            normalizedHost == GOOGLE_PRIVATE_DNS_HOST ||
-                normalizedHost == CLOUDFLARE_PRIVATE_DNS_HOST ||
-                NEXTDNS_HOST_PATTERN.matches(normalizedHost),
-        ) { "Allowed hostname: dns.google, one.one.one.one, ya valid NextDNS hostname." }
-    }
-
-    private fun privateDnsResultMessage(result: Int, host: String?): String = when (result) {
-        DevicePolicyManager.PRIVATE_DNS_SET_ERROR_HOST_NOT_SERVING ->
-            "Private DNS provider current network par serve/reachable nahi hai."
-
-        DevicePolicyManager.PRIVATE_DNS_SET_ERROR_FAILURE_SETTING ->
-            "Android system Private DNS setting apply nahi kar paya. Device Owner permission, VPN, " +
-                "work profile policy, ya OEM restriction check karo."
-
-        else -> "Private DNS set nahi hua. Unknown result code: $result"
-    }
-
-    private fun userReadablePrivateDnsException(throwable: Throwable): String = when (throwable) {
-        is SecurityException -> "Device Owner permission valid nahi hai: ${throwable.message.orEmpty()}"
-        is IllegalArgumentException -> "Private DNS hostname invalid hai: ${throwable.message.orEmpty()}"
-        is IllegalStateException -> throwable.message ?: "Private DNS set nahi hua."
-        else -> throwable.message ?: throwable::class.java.simpleName
+        lastPrivateDnsStatus.value = listOf(
+            "Device Owner: $owner",
+            "Admin active: $active",
+            "Admin component: ${adminComponent.packageName}/${adminComponent.className}",
+            "Hostname: $REQUIRED_PRIVATE_DNS_HOST",
+            "DPM result code: $dpmResultText",
+            "Final readable error: $finalErrorText",
+        ).joinToString(separator = "\n")
     }
 
     private fun validatePrivateDnsHost(host: String) {
