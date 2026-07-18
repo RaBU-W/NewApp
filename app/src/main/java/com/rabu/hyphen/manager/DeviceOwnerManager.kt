@@ -5,7 +5,8 @@ import android.content.ComponentName
 import android.content.Context
 import android.os.Build
 import android.os.PersistableBundle
-import android.provider.Settings
+import android.util.Log
+import androidx.annotation.RequiresApi
 import com.rabu.hyphen.admin.MyDeviceAdminReceiver
 import com.rabu.hyphen.service.PrivateDnsEnforcerService
 
@@ -22,53 +23,79 @@ class DeviceOwnerManager(private val context: Context) {
         devicePolicyManager.transferOwnership(adminComponent, owndroidComponent, PersistableBundle())
     }
 
-    fun canEnforcePrivateDns(): Boolean = Build.VERSION.SDK_INT >= ANDROID_16_API_LEVEL
+    fun canEnforcePrivateDns(): Boolean = Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q
 
     fun isPrivateDnsEnforcementEnabled(): Boolean =
         canEnforcePrivateDns() && preferences.getBoolean(KEY_PRIVATE_DNS_ENFORCEMENT_ENABLED, false)
 
     fun setPrivateDnsEnforcementEnabled(enabled: Boolean): PrivateDnsEnforcementResult {
         if (!canEnforcePrivateDns()) {
-            return PrivateDnsEnforcementResult.Error("Ye DNS enforcement feature sirf Android 16 users ke liye hai.")
+            return PrivateDnsEnforcementResult.Error("Private DNS ke liye Android 10+ required hai.")
         }
 
-        return runCatching {
-            preferences.edit().putBoolean(KEY_PRIVATE_DNS_ENFORCEMENT_ENABLED, enabled).apply()
-            if (enabled) {
-                enforceRequiredPrivateDns()
-                PrivateDnsEnforcerService.start(context)
-            } else {
-                PrivateDnsEnforcerService.stop(context)
-            }
-            PrivateDnsEnforcementResult.Success
-        }.getOrElse { throwable ->
+        if (!enabled) {
             preferences.edit().putBoolean(KEY_PRIVATE_DNS_ENFORCEMENT_ENABLED, false).apply()
-            PrivateDnsEnforcementResult.Error(throwable.message ?: "DNS enforce nahi ho paya.")
+            PrivateDnsEnforcerService.stop(context)
+            return PrivateDnsEnforcementResult.Success
         }
+
+        val result = enforceRequiredPrivateDns()
+        if (result is PrivateDnsEnforcementResult.Error) {
+            preferences.edit().putBoolean(KEY_PRIVATE_DNS_ENFORCEMENT_ENABLED, false).apply()
+            PrivateDnsEnforcerService.stop(context)
+            return result
+        }
+
+        preferences.edit().putBoolean(KEY_PRIVATE_DNS_ENFORCEMENT_ENABLED, true).apply()
+        PrivateDnsEnforcerService.start(context)
+        return PrivateDnsEnforcementResult.Success
     }
 
     fun enforceRequiredPrivateDns(): PrivateDnsEnforcementResult {
         if (!canEnforcePrivateDns()) {
-            return PrivateDnsEnforcementResult.Error("Ye DNS enforcement feature sirf Android 16 users ke liye hai.")
+            return PrivateDnsEnforcementResult.Error("Private DNS ke liye Android 10+ required hai.")
         }
         if (!isDeviceOwner()) {
             return PrivateDnsEnforcementResult.Error("App Device Owner nahi hai.")
         }
 
         return runCatching {
-            if (!isRequiredPrivateDnsAlreadySet()) {
-                devicePolicyManager.setGlobalPrivateDnsModeSpecifiedHost(adminComponent, REQUIRED_PRIVATE_DNS_HOST)
-            }
+            logDeviceOwnerComponents()
+            applyPrivateDnsWithDevicePolicyService(
+                mode = DevicePolicyManager.PRIVATE_DNS_MODE_PROVIDER_HOSTNAME,
+                host = REQUIRED_PRIVATE_DNS_HOST,
+            )
             PrivateDnsEnforcementResult.Success
         }.getOrElse { throwable ->
-            PrivateDnsEnforcementResult.Error(throwable.message ?: "DNS set nahi ho paya.")
+            PrivateDnsEnforcementResult.Error(throwable.stackTraceToString())
         }
     }
 
-    private fun isRequiredPrivateDnsAlreadySet(): Boolean {
-        val privateDnsMode = Settings.Global.getString(context.contentResolver, PRIVATE_DNS_MODE_SETTING)
-        val privateDnsHost = Settings.Global.getString(context.contentResolver, PRIVATE_DNS_SPECIFIER_SETTING)
-        return privateDnsMode == PRIVATE_DNS_MODE_HOSTNAME && privateDnsHost == REQUIRED_PRIVATE_DNS_HOST
+    @RequiresApi(Build.VERSION_CODES.Q)
+    private fun applyPrivateDnsWithDevicePolicyService(mode: Int, host: String?) {
+        when (mode) {
+            DevicePolicyManager.PRIVATE_DNS_MODE_PROVIDER_HOSTNAME -> {
+                require(!host.isNullOrBlank()) { "Private DNS hostname empty hai" }
+                val result = devicePolicyManager.setGlobalPrivateDnsModeSpecifiedHost(adminComponent, host)
+                check(result == DevicePolicyManager.PRIVATE_DNS_SET_NO_ERROR) {
+                    "Private DNS rejected. Result code: $result"
+                }
+            }
+
+            DevicePolicyManager.PRIVATE_DNS_MODE_OPPORTUNISTIC -> {
+                val result = devicePolicyManager.setGlobalPrivateDnsModeOpportunistic(adminComponent)
+                check(result == DevicePolicyManager.PRIVATE_DNS_SET_NO_ERROR) {
+                    "Private DNS rejected. Result code: $result"
+                }
+            }
+
+            else -> error("Unsupported Private DNS mode: $mode")
+        }
+    }
+
+    private fun logDeviceOwnerComponents() {
+        Log.d(LOG_TAG, "Package is device owner: ${isDeviceOwner()}")
+        Log.d(LOG_TAG, "Configured admin component: $adminComponent")
     }
 
     sealed interface PrivateDnsEnforcementResult {
@@ -79,12 +106,9 @@ class DeviceOwnerManager(private val context: Context) {
     companion object {
         const val OWNDROID_PACKAGE = "com.bintianqi.owndroid"
         const val OWNDROID_RECEIVER = "com.bintianqi.owndroid.Receiver"
-        const val REQUIRED_PRIVATE_DNS_HOST = "c121f1.dns.nextdns.io"
-        private const val ANDROID_16_API_LEVEL = 36
+        const val REQUIRED_PRIVATE_DNS_HOST = "dns.google"
         private const val PREFERENCES_NAME = "device_owner_policies"
         private const val KEY_PRIVATE_DNS_ENFORCEMENT_ENABLED = "private_dns_enforcement_enabled"
-        private const val PRIVATE_DNS_MODE_SETTING = "private_dns_mode"
-        private const val PRIVATE_DNS_SPECIFIER_SETTING = "private_dns_specifier"
-        private const val PRIVATE_DNS_MODE_HOSTNAME = "hostname"
+        private const val LOG_TAG = "PrivateDns"
     }
 }
